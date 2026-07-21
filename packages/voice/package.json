@@ -1,0 +1,36 @@
+{
+  "name": "mendelio-voice",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for the Mendelio Voice API — generate natural speech, clone voices, poll async work, verify webhooks.",
+  "license": "MIT",
+  "type": "module",
+  "author": "Mendelio",
+  "homepage": "https://voice.mendelio.net/developers",
+  "repository": { "type": "git", "url": "https://github.com/mendelionet/sdk.git", "directory": "packages/voice" },
+  "keywords": ["mendelio", "voice", "tts", "text-to-speech", "czech", "speech", "voice-cloning"],
+  "engines": { "node": ">=18" },
+  "bin": { "mendelio-voice": "./dist/cli.js" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
