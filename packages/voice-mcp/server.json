@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.mendelionet/mendelio-voice",
+  "description": "Generate natural Czech and multilingual speech and clone voices with the Mendelio Voice API.",
+  "repository": { "url": "https://github.com/mendelionet/sdk", "source": "github" },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "mendelio-voice-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" }
+    }
+  ],
+  "remotes": [
+    { "type": "streamable-http", "url": "https://api.mendelio.net/mcp" }
+  ]
+}
