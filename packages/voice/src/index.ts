@@ -35,7 +35,6 @@ export type {
   GenerateParams,
   Generation,
   GenerationState,
-  InputNormalization,
   LanguageCode,
   ListResponse,
   Model,

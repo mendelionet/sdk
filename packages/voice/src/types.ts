@@ -7,7 +7,6 @@
  */
 
 export type Format = "mp3" | "wav";
-export type InputNormalization = "none" | "czech_spoken";
 export type LanguageCode = "cs" | "en" | "de";
 
 export type GenerationState =
@@ -141,8 +140,6 @@ export interface GenerateParams {
   voiceVersionId?: string;
   model?: string;
   format?: Format;
-  retentionDays?: number;
-  inputNormalization?: InputNormalization;
 }
 export interface CreateVoiceParams {
   name: string;

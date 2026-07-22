@@ -5,7 +5,7 @@ import { VoicesResource } from "./resources/voices.js";
 import { ModelsResource } from "./resources/models.js";
 import { ReferencePromptsResource } from "./resources/referencePrompts.js";
 import { BalanceResource } from "./resources/balance.js";
-import type { Format, Generation, InputNormalization } from "./types.js";
+import type { Format, Generation } from "./types.js";
 
 const VERSION = "0.1.0";
 const DEFAULT_BASE_URL = "https://api.mendelio.net/v1/voice";
@@ -159,7 +159,6 @@ export class MendelioVoice {
     text: string;
     voiceVersionId?: string;
     format?: Format;
-    inputNormalization?: InputNormalization;
   }): Promise<{ generation: Generation; audio: Uint8Array }> {
     let voiceVersionId = params.voiceVersionId;
     if (!voiceVersionId) {
@@ -181,7 +180,6 @@ export class MendelioVoice {
       text: params.text,
       voiceVersionId,
       format: params.format,
-      inputNormalization: params.inputNormalization,
     });
     const generation = await this.generations.waitFor(created.id);
     const audio = await this.generations.download(generation);
