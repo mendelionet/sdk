@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MendelioVoice } from "./client.js";
 import {
@@ -7,6 +10,7 @@ import {
   IdempotencyError,
   InvalidRequestError,
   PermissionError,
+  RateLimitError,
 } from "./errors.js";
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
@@ -40,6 +44,7 @@ describe("error mapping", () => {
     [400, "invalid_request_error", "invalid_request", InvalidRequestError],
     [402, "invalid_request_error", "insufficient_credit", InvalidRequestError],
     [409, "idempotency_error", "idempotency_conflict", IdempotencyError],
+    [429, "rate_limit_error", "rate_limited", RateLimitError],
     [429, "capacity_error", "capacity_saturated", CapacityError],
   ])("maps %s → the right subclass", async (status, type, code, Ctor) => {
     const { fetch } = queuedFetch([json(status as number, envelope(type as string, code as string))]);
@@ -65,11 +70,72 @@ describe("error mapping", () => {
 describe("auth key resolution", () => {
   it("throws AuthenticationError at first request with no key", async () => {
     const { fetch } = queuedFetch([json(200, {})]);
-    const prev = process.env.MENDELIO_VOICE_API_KEY;
+    const previousKey = process.env.MENDELIO_VOICE_API_KEY;
+    const previousConfigHome = process.env.XDG_CONFIG_HOME;
     delete process.env.MENDELIO_VOICE_API_KEY;
-    const client = new MendelioVoice({ fetch, baseUrl: "https://api.example/v1/voice" });
-    await expect(client.balance.get()).rejects.toBeInstanceOf(AuthenticationError);
-    if (prev) process.env.MENDELIO_VOICE_API_KEY = prev;
+    process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "mendelio-voice-auth-test-"));
+    try {
+      const client = new MendelioVoice({ fetch, baseUrl: "https://api.example/v1/audio" });
+      await expect(client.balance.get()).rejects.toBeInstanceOf(AuthenticationError);
+    } finally {
+      if (previousKey === undefined) delete process.env.MENDELIO_VOICE_API_KEY;
+      else process.env.MENDELIO_VOICE_API_KEY = previousKey;
+      if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousConfigHome;
+    }
+  });
+});
+
+describe("current public API routing", () => {
+  it("uses the production /v1/audio base for balance", async () => {
+    const { fetch, calls } = queuedFetch([
+      json(200, {
+        object: "voice.balance",
+        unit: "audio_second",
+        total: 10,
+        reserved: 1,
+        available: 9,
+        updated_at: "2026-07-24T00:00:00Z",
+      }),
+    ]);
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+
+    await client.balance.get();
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://api.mendelio.net/v1/audio/balance",
+    ]);
+  });
+
+  it("creates and reads asynchronous speech jobs through /speech/jobs", async () => {
+    const queued = {
+      id: "job-1",
+      object: "audio.speech_job",
+      state: "queued",
+      work_class: "mendelio_voice_public_batch",
+      model: "mendelio-voice-1",
+      model_version: null,
+      cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 },
+    };
+    const completed = {
+      ...queued,
+      state: "completed",
+      voice_version_id: "voice-1",
+      cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
+      output: null,
+      created_at: "2026-07-24T00:00:00Z",
+      completed_at: "2026-07-24T00:00:01Z",
+    };
+    const { fetch, calls } = queuedFetch([json(202, queued), json(200, completed)]);
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+
+    await client.generations.create({ text: "Ahoj", voiceVersionId: "voice-1" });
+    await client.generations.get("job-1");
+
+    expect(calls.map((call) => [call.method, call.url])).toEqual([
+      ["POST", "https://api.mendelio.net/v1/audio/speech/jobs"],
+      ["GET", "https://api.mendelio.net/v1/audio/speech/jobs/job-1"],
+    ]);
   });
 });
 
@@ -94,7 +160,7 @@ describe("retry", () => {
   it("reuses one idempotency key across retries of a create", async () => {
     const { fetch, calls } = queuedFetch([
       json(500, envelope("api_error", "internal_error")),
-      json(200, { id: "gen_1", object: "voice.generation", state: "queued", cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } }),
+      json(200, { id: "gen_1", object: "audio.speech_job", state: "queued", cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } }),
     ]);
     const client = new MendelioVoice({ apiKey: KEY, fetch, maxRetries: 2 });
     await client.generations.create({ text: "Ahoj", voiceVersionId: "v1" });
@@ -108,7 +174,7 @@ describe("retry", () => {
 
 describe("generations.waitFor", () => {
   it("polls until completed", async () => {
-    const gen = (state: string) => json(200, { id: "g", object: "voice.generation", state, cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } });
+    const gen = (state: string) => json(200, { id: "g", object: "audio.speech_job", state, cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } });
     const { fetch } = queuedFetch([gen("queued"), gen("generating"), gen("completed")]);
     const client = new MendelioVoice({ apiKey: KEY, fetch });
     const result = await client.generations.waitFor("g", { pollIntervalMs: 1 });
@@ -116,57 +182,225 @@ describe("generations.waitFor", () => {
   });
 
   it("throws GenerationFailedError on failed", async () => {
-    const { fetch } = queuedFetch([json(200, { id: "g", object: "voice.generation", state: "failed", cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } })]);
+    const { fetch } = queuedFetch([json(200, { id: "g", object: "audio.speech_job", state: "failed", cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } })]);
     const client = new MendelioVoice({ apiKey: KEY, fetch });
     await expect(client.generations.waitFor("g", { pollIntervalMs: 1 })).rejects.toBeInstanceOf(GenerationFailedError);
   });
 });
 
 describe("generations.download", () => {
+  it("uses the client's injected fetch for the signed audio URL", async () => {
+    const globalFetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("global fetch must not run"));
+    const { fetch, calls } = queuedFetch([new Response(new Uint8Array([7, 8, 9]))]);
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+    try {
+      const audio = await client.generations.download({
+        id: "g",
+        object: "audio.speech_job",
+        state: "completed",
+        work_class: "mendelio_voice_public_batch",
+        voice_version_id: "voice-1",
+        model: "mendelio-voice-1",
+        model_version: null,
+        cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
+        output: {
+          status: "available",
+          format: "mp3",
+          audio_seconds: 1,
+          bytes: 3,
+          sha256: "a".repeat(64),
+          retention_expires_at: "x",
+          url: "https://download.example/audio",
+          url_expires_at: "y",
+        },
+        created_at: "x",
+        completed_at: "y",
+      });
+
+      expect(Array.from(audio)).toEqual([7, 8, 9]);
+      expect(calls.map((call) => call.url)).toEqual(["https://download.example/audio"]);
+      expect(globalFetch).not.toHaveBeenCalled();
+    } finally {
+      globalFetch.mockRestore();
+    }
+  });
+
   it("re-fetches for a fresh URL when the cached output is expired", async () => {
-    const globalFetch = vi.spyOn(globalThis, "fetch");
-    globalFetch.mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
     const { fetch } = queuedFetch([
       json(200, {
-        id: "g", object: "voice.generation", state: "completed",
+        id: "g", object: "audio.speech_job", state: "completed",
         cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
         output: { status: "available", format: "mp3", audio_seconds: 1, bytes: 3, sha256: "a".repeat(64), retention_expires_at: "x", url: "https://dl/fresh", url_expires_at: "y" },
       }),
+      new Response(new Uint8Array([1, 2, 3])),
     ]);
     const client = new MendelioVoice({ apiKey: KEY, fetch });
-    const audio = await client.generations.download({ id: "g", object: "voice.generation", state: "completed", cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 }, output: { status: "expired", format: "mp3", retention_expires_at: "x" } });
+    const audio = await client.generations.download({
+      id: "g",
+      object: "audio.speech_job",
+      state: "completed",
+      work_class: "mendelio_voice_public_batch",
+      voice_version_id: "voice-1",
+      model: "mendelio-voice-1",
+      model_version: null,
+      cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
+      output: { status: "expired", format: "mp3", retention_expires_at: "x" },
+      created_at: "x",
+      completed_at: "y",
+    });
     expect(Array.from(audio)).toEqual([1, 2, 3]);
-    globalFetch.mockRestore();
   });
 });
 
 describe("voices pagination + speak", () => {
   it("iterates across pages", async () => {
-    const voice = (id: string, kind?: string) => ({ id, object: "voice.voice", voice_profile_id: "p", name: id, language: "cs", state: "ready", failure_code: null, created_at: "x", ready_at: "x", languages: [], ...(kind ? { kind } : {}) });
+    const voice = (id: string) => ({
+      voiceVersionId: id,
+      displayName: id,
+      languageCode: "cs",
+      relation: "offered",
+      availability: "available",
+      capabilities: ["speech"],
+      accessClass: "public",
+      styleTags: [],
+      useCaseTags: [],
+      preview: null,
+    });
     const { fetch } = queuedFetch([
-      json(200, { object: "voice.list", data: [voice("v1")], has_more: true, next_cursor: "c1" }),
-      json(200, { object: "voice.list", data: [voice("v2")], has_more: false, next_cursor: null }),
+      json(200, { data: [voice("v1")], hasMore: true, nextCursor: "c1", revision: 1, etag: "one" }),
+      json(200, { data: [voice("v2")], hasMore: false, nextCursor: null, revision: 1, etag: "two" }),
     ]);
     const client = new MendelioVoice({ apiKey: KEY, fetch });
     const ids: string[] = [];
-    for await (const v of client.voices.list()) ids.push(v.id);
+    for await (const v of client.voices.list()) ids.push(v.voiceVersionId);
     expect(ids).toEqual(["v1", "v2"]);
   });
 
-  it("speak picks the first system voice", async () => {
-    const voice = (id: string, kind?: string, state = "ready") => ({ id, object: "voice.voice", voice_profile_id: "p", name: id, language: "cs", state, failure_code: null, created_at: "x", ready_at: "x", languages: [], ...(kind ? { kind } : {}) });
-    const dl = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Uint8Array([9])));
+  it("speak picks the first available speech-capable catalog voice", async () => {
+    const voice = (
+      id: string,
+      availability: "available" | "locked",
+      capabilities: ("speech" | "preview")[],
+    ) => ({
+      voiceVersionId: id,
+      displayName: id,
+      languageCode: "cs",
+      relation: "offered",
+      availability,
+      capabilities,
+      accessClass: "public",
+      styleTags: [],
+      useCaseTags: [],
+      preview: null,
+    });
     const { fetch, calls } = queuedFetch([
-      json(200, { object: "voice.list", data: [voice("personal1", "personal"), voice("adela", "system")], has_more: false, next_cursor: null }),
-      json(200, { id: "g", object: "voice.generation", state: "completed", cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 } }), // create
-      json(200, { id: "g", object: "voice.generation", state: "completed", cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 }, output: { status: "available", format: "mp3", audio_seconds: 1, bytes: 1, sha256: "a".repeat(64), retention_expires_at: "x", url: "https://dl", url_expires_at: "y" } }), // waitFor
+      json(200, {
+        data: [
+          voice("locked", "locked", ["speech"]),
+          voice("preview-only", "available", ["preview"]),
+          voice("adela", "available", ["speech"]),
+        ],
+        hasMore: false,
+        nextCursor: null,
+        revision: 1,
+        etag: "catalog",
+      }),
+      json(200, {
+        id: "g",
+        object: "audio.speech_job",
+        state: "queued",
+        work_class: "mendelio_voice_public_batch",
+        model: "mendelio-voice-1",
+        model_version: null,
+        cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 },
+      }),
+      json(200, {
+        id: "g",
+        object: "audio.speech_job",
+        state: "completed",
+        work_class: "mendelio_voice_public_batch",
+        voice_version_id: "adela",
+        model: "mendelio-voice-1",
+        model_version: null,
+        cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
+        output: { status: "available", format: "mp3", audio_seconds: 1, bytes: 1, sha256: "a".repeat(64), retention_expires_at: "x", url: "https://dl", url_expires_at: "y" },
+        created_at: "x",
+        completed_at: "y",
+      }),
+      new Response(new Uint8Array([9])),
     ]);
     const client = new MendelioVoice({ apiKey: KEY, fetch });
-    const { generation } = await client.speak({ text: "Ahoj" });
+    const { generation, audio } = await client.speak({ text: "Ahoj" });
     expect(generation.state).toBe("completed");
-    // The create call (2nd request) must have targeted the SYSTEM voice, not the personal one.
+    expect(Array.from(audio)).toEqual([9]);
     const createBody = await calls[1]!.json();
     expect(createBody.voiceVersionId).toBe("adela");
-    dl.mockRestore();
+  });
+
+  it("uses the client's injected fetch for the signed voice upload", async () => {
+    const globalFetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("global fetch must not run"));
+    const createdVoice = {
+      id: "voice-1",
+      object: "voice.voice",
+      voice_profile_id: "profile-1",
+      name: "Test voice",
+      language: "cs",
+      state: "awaiting_upload",
+      failure_code: null,
+      created_at: "x",
+      ready_at: null,
+      languages: [{ code: "cs", state: "awaiting_upload" }],
+      kind: "personal",
+    };
+    const { fetch, calls } = queuedFetch([
+      json(201, {
+        voice: createdVoice,
+        upload: {
+          object: "voice.upload",
+          url: "https://upload.example/reference",
+          expires_at: "y",
+        },
+      }),
+      new Response(null, { status: 200 }),
+      json(200, {
+        object: "voice.submit",
+        voice_version_id: "voice-1",
+        acceptance: "processing",
+      }),
+    ]);
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+    try {
+      const result = await client.voices.createFromFile({
+        name: "Test voice",
+        referenceTextId: "prompt-cs",
+        file: new Uint8Array([1, 2, 3]),
+        rightsAttestation: {
+          accepted: true,
+          version: "2026-07-22-v1",
+          speakerRelationship: "self",
+        },
+      });
+
+      expect(result.id).toBe("voice-1");
+      expect(calls.map((call) => [call.method, call.url])).toEqual([
+        ["POST", "https://api.mendelio.net/v1/audio/owned-voices"],
+        ["PUT", "https://upload.example/reference"],
+        ["POST", "https://api.mendelio.net/v1/audio/owned-voices/voice-1/submit"],
+      ]);
+      expect(await calls[0]!.json()).toMatchObject({
+        name: "Test voice",
+        referenceTextId: "prompt-cs",
+        rightsAttestation: {
+          accepted: true,
+          version: "2026-07-22-v1",
+          speakerRelationship: "self",
+        },
+      });
+      expect(calls[1]!.headers.get("content-type")).toBe("audio/wav");
+      expect(Array.from(new Uint8Array(await calls[1]!.arrayBuffer()))).toEqual([1, 2, 3]);
+      expect(globalFetch).not.toHaveBeenCalled();
+    } finally {
+      globalFetch.mockRestore();
+    }
   });
 });

@@ -19,7 +19,7 @@ async function sign(body: string, t: number, secret = SECRET): Promise<string> {
 
 const NOW = 1_753_000_000_000; // fixed clock (ms)
 const T = Math.floor(NOW / 1000);
-const BODY = JSON.stringify({ id: "evt_1", type: "generation.completed", created: T, data: { id: "gen_1" } });
+const BODY = JSON.stringify({ id: "evt_1", type: "speech_job.completed", created: T, data: { id: "job_1" } });
 
 describe("verifySignature", () => {
   it("accepts a valid signature over the raw body", async () => {
@@ -28,23 +28,32 @@ describe("verifySignature", () => {
   });
 
   it("is case-insensitive about header names", async () => {
-    const headers = { "voice-signature": await sign(BODY, T) };
+    const headers = { "voice-signature": await sign(BODY, T), "voice-timestamp": String(T) };
     expect(await verifySignature(BODY, headers, SECRET, { now: NOW })).toBe(true);
   });
 
+  it("rejects a missing or mismatched Voice-Timestamp header", async () => {
+    const signature = await sign(BODY, T);
+    expect(await verifySignature(BODY, { "Voice-Signature": signature }, SECRET, { now: NOW })).toBe(false);
+    expect(await verifySignature(BODY, {
+      "Voice-Signature": signature,
+      "Voice-Timestamp": String(T + 1),
+    }, SECRET, { now: NOW })).toBe(false);
+  });
+
   it("rejects a tampered body", async () => {
-    const headers = { "Voice-Signature": await sign(BODY, T) };
+    const headers = { "Voice-Signature": await sign(BODY, T), "Voice-Timestamp": String(T) };
     expect(await verifySignature(BODY + " ", headers, SECRET, { now: NOW })).toBe(false);
   });
 
   it("rejects a wrong secret", async () => {
-    const headers = { "Voice-Signature": await sign(BODY, T, "whsec_other") };
+    const headers = { "Voice-Signature": await sign(BODY, T, "whsec_other"), "Voice-Timestamp": String(T) };
     expect(await verifySignature(BODY, headers, SECRET, { now: NOW })).toBe(false);
   });
 
   it("rejects a timestamp outside tolerance", async () => {
     const old = T - 10_000;
-    const headers = { "Voice-Signature": await sign(BODY, old) };
+    const headers = { "Voice-Signature": await sign(BODY, old), "Voice-Timestamp": String(old) };
     expect(await verifySignature(BODY, headers, SECRET, { now: NOW })).toBe(false);
   });
 
@@ -55,9 +64,9 @@ describe("verifySignature", () => {
 
 describe("constructEvent", () => {
   it("returns the typed event on a valid signature", async () => {
-    const headers = { "Voice-Signature": await sign(BODY, T) };
+    const headers = { "Voice-Signature": await sign(BODY, T), "Voice-Timestamp": String(T) };
     const event = await constructEvent(BODY, headers, SECRET, { now: NOW });
-    expect(event.type).toBe("generation.completed");
+    expect(event.type).toBe("speech_job.completed");
     expect(event.id).toBe("evt_1");
   });
 
@@ -68,7 +77,7 @@ describe("constructEvent", () => {
 
   it("throws on an unknown event type", async () => {
     const body = JSON.stringify({ id: "x", type: "nope", created: T, data: {} });
-    const headers = { "Voice-Signature": await sign(body, T) };
+    const headers = { "Voice-Signature": await sign(body, T), "Voice-Timestamp": String(T) };
     await expect(constructEvent(body, headers, SECRET, { now: NOW }))
       .rejects.toBeInstanceOf(WebhookVerificationError);
   });

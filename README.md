@@ -55,6 +55,11 @@ const voice = await client.voices.createFromFile({
   name: "My voice",
   referenceTextId: prompts[0].id,     // read this text aloud when you record
   file: readFileSync("reference.wav"),
+  rightsAttestation: {
+    accepted: true,
+    version: "2026-07-22-v1",
+    speakerRelationship: "self",      // or "authorized"
+  },
 });
 const ready = await client.voices.waitForReady(voice.id);
 ```

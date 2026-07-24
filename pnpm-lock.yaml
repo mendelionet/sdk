@@ -33,7 +33,7 @@ importers:
         specifier: ^1.12.0
         version: 1.29.0(zod@3.25.76)
       mendelio-voice:
-        specifier: workspace:*
+        specifier: workspace:0.1.0
         version: link:../voice
       zod:
         specifier: ^3.23.0

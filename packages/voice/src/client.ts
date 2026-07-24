@@ -8,7 +8,7 @@ import { BalanceResource } from "./resources/balance.js";
 import type { Format, Generation } from "./types.js";
 
 const VERSION = "0.1.0";
-const DEFAULT_BASE_URL = "https://api.mendelio.net/v1/voice";
+const DEFAULT_BASE_URL = "https://api.mendelio.net/v1/audio";
 
 export interface MendelioVoiceOptions {
   /** Falls back to $MENDELIO_VOICE_API_KEY, then ~/.config/mendelio/credentials.json. */
@@ -52,8 +52,8 @@ export class MendelioVoice {
     this.maxRetries = options.maxRetries ?? 2;
     this.timeoutMs = options.timeoutMs ?? 60_000;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
-    this.generations = new GenerationsResource(this);
-    this.voices = new VoicesResource(this);
+    this.generations = new GenerationsResource(this, this.fetchImpl);
+    this.voices = new VoicesResource(this, this.fetchImpl);
     this.models = new ModelsResource(this);
     this.referencePrompts = new ReferencePromptsResource(this);
     this.balance = new BalanceResource(this);
@@ -162,9 +162,11 @@ export class MendelioVoice {
   }): Promise<{ generation: Generation; audio: Uint8Array }> {
     let voiceVersionId = params.voiceVersionId;
     if (!voiceVersionId) {
-      const voices: import("./types.js").Voice[] = [];
+      const voices: import("./types.js").CatalogVoice[] = [];
       for await (const voice of this.voices.list()) voices.push(voice);
-      const pick = voices.find((v) => v.kind === "system") ?? voices.find((v) => v.state === "ready");
+      const pick = voices.find(
+        (voice) => voice.availability === "available" && voice.capabilities.includes("speech"),
+      );
       if (!pick) {
         throw new (await import("./errors.js")).InvalidRequestError(400, {
           type: "invalid_request_error",
@@ -174,7 +176,7 @@ export class MendelioVoice {
           request_id: "",
         });
       }
-      voiceVersionId = pick.id;
+      voiceVersionId = pick.voiceVersionId;
     }
     const created = await this.generations.create({
       text: params.text,

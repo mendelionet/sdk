@@ -45,9 +45,7 @@ async function main(): Promise<void> {
 
   for (const tool of tools) {
     server.tool(tool.name, tool.description, tool.inputSchema, async (args) => {
-      const result = await tool.handler(args as Record<string, unknown>);
-      // The SDK's CallToolResult carries an index signature; a fresh object literal satisfies it.
-      return { content: result.content };
+      return await tool.handler(args as Record<string, unknown>);
     });
   }
 

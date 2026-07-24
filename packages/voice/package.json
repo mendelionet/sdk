@@ -25,6 +25,8 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:contract": "node scripts/contract-smoke.mjs",
+    "test:live-negative": "pnpm build && node scripts/live-negative-smoke.mjs",
     "test:watch": "vitest"
   },
   "devDependencies": {

@@ -46,6 +46,7 @@ export class AuthenticationError extends VoiceApiError {}
 export class PermissionError extends VoiceApiError {}
 export class InvalidRequestError extends VoiceApiError {}
 export class IdempotencyError extends VoiceApiError {}
+export class RateLimitError extends VoiceApiError {}
 export class CapacityError extends VoiceApiError {}
 export class ApiError extends VoiceApiError {}
 
@@ -54,6 +55,7 @@ const TYPE_TO_ERROR: Record<ErrorType, new (status: number, body: any) => VoiceA
   permission_error: PermissionError,
   invalid_request_error: InvalidRequestError,
   idempotency_error: IdempotencyError,
+  rate_limit_error: RateLimitError,
   capacity_error: CapacityError,
   api_error: ApiError,
 };

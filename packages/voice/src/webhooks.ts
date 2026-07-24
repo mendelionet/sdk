@@ -64,9 +64,12 @@ export async function verifySignature(
   options: VerifyOptions = {},
 ): Promise<boolean> {
   const sigHeader = header(headers, "Voice-Signature");
-  if (!sigHeader) return false;
+  const timestampHeader = header(headers, "Voice-Timestamp");
+  if (!sigHeader || !timestampHeader) return false;
   const parsed = parseSignature(sigHeader);
   if (!parsed) return false;
+  const headerTimestamp = Number(timestampHeader);
+  if (!Number.isFinite(headerTimestamp) || headerTimestamp !== parsed.t) return false;
 
   const toleranceSec = options.toleranceSec ?? 300;
   const nowSec = Math.floor((options.now ?? Date.now()) / 1000);
@@ -77,11 +80,14 @@ export async function verifySignature(
 }
 
 const EVENT_TYPES = new Set<WebhookEventType>([
-  "generation.completed",
-  "generation.failed",
-  "generation.cancelled",
+  "speech_job.completed",
+  "speech_job.failed",
+  "speech_job.cancelled",
   "voice.ready",
   "voice.failed",
+  "transcription.completed",
+  "transcription.failed",
+  "transcription.expired",
 ]);
 
 /**

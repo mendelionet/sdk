@@ -18,6 +18,11 @@ export type GenerationState =
   | "failed"
   | "cancelling"
   | "cancelled";
+export type SpeechWorkClass =
+  | "live_first_chunk"
+  | "live_followup_chunk"
+  | "mendelio_internal_batch"
+  | "mendelio_voice_public_batch";
 
 export type PublicVoiceState = "awaiting_upload" | "processing" | "ready" | "failed";
 export type VoiceKind = "system" | "personal";
@@ -55,18 +60,28 @@ export interface ExpiredGenerationOutput {
 }
 export type ReadGenerationOutput = AvailableGenerationOutput | ExpiredGenerationOutput | null;
 
+export interface CreateGeneration {
+  id: string;
+  object: "audio.speech_job";
+  state: GenerationState;
+  work_class: SpeechWorkClass;
+  model: "mendelio-voice-1";
+  model_version: string | null;
+  cost: ReservedCost;
+}
+
 export interface Generation {
   id: string;
-  object: "voice.generation";
+  object: "audio.speech_job";
   state: GenerationState;
-  work_class?: string;
-  voice_version_id?: string;
-  model?: string;
-  model_version?: string | null;
+  work_class: SpeechWorkClass;
+  voice_version_id: string;
+  model: "mendelio-voice-1";
+  model_version: string | null;
   cost: CostProjection;
-  output?: ReadGenerationOutput;
-  created_at?: string;
-  completed_at?: string | null;
+  output: ReadGenerationOutput;
+  created_at: string;
+  completed_at: string | null;
 }
 
 export interface VoiceLanguageState {
@@ -85,7 +100,29 @@ export interface Voice {
   ready_at: string | null;
   languages: VoiceLanguageState[];
   /** system = a platform voice usable by anyone; personal = your own clone. */
-  kind?: VoiceKind;
+  kind: VoiceKind;
+}
+
+export interface CatalogVoice {
+  voiceVersionId: string;
+  displayName: string;
+  languageCode: LanguageCode;
+  relation: "own" | "shared" | "offered";
+  availability: "available" | "locked" | "temporarily_unavailable";
+  safeReason?: "upgrade_required" | "sign_in_required" | "temporarily_unavailable";
+  capabilities: ("speech" | "preview" | "live-agent" | "podcast")[];
+  accessClass: "public" | "basic" | "premium" | "donor" | "internal";
+  styleTags: string[];
+  useCaseTags: string[];
+  preview: { url: string; expiresAt: string } | null;
+}
+
+export interface VoiceCatalogPage {
+  data: CatalogVoice[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  revision: number;
+  etag: string;
 }
 
 export interface VoiceUpload {
@@ -100,7 +137,7 @@ export interface CreateVoiceResponse {
 export interface SubmitVoiceResponse {
   object: "voice.submit";
   voice_version_id: string;
-  acceptance: string;
+  acceptance: "enqueued" | "already_enqueued";
 }
 
 export interface Model {
@@ -137,14 +174,20 @@ export interface ListResponse<T> {
 
 export interface GenerateParams {
   text: string;
-  voiceVersionId?: string;
-  model?: string;
+  voiceVersionId: string;
+  model?: "mendelio-voice-1" | null;
   format?: Format;
+  store?: boolean;
 }
 export interface CreateVoiceParams {
   name: string;
   referenceTextId: string;
   voiceProfileId?: string | null;
+  rightsAttestation: {
+    accepted: true;
+    version: "2026-07-22-v1";
+    speakerRelationship: "self" | "authorized";
+  };
 }
 
 // --- Error envelope ---
@@ -154,6 +197,7 @@ export type ErrorType =
   | "permission_error"
   | "invalid_request_error"
   | "idempotency_error"
+  | "rate_limit_error"
   | "capacity_error"
   | "api_error";
 
@@ -170,11 +214,14 @@ export interface ErrorEnvelope {
 // --- Webhooks ---
 
 export type WebhookEventType =
-  | "generation.completed"
-  | "generation.failed"
-  | "generation.cancelled"
+  | "speech_job.completed"
+  | "speech_job.failed"
+  | "speech_job.cancelled"
   | "voice.ready"
-  | "voice.failed";
+  | "voice.failed"
+  | "transcription.completed"
+  | "transcription.failed"
+  | "transcription.expired";
 
 export interface WebhookEvent {
   id: string;

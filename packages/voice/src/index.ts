@@ -10,6 +10,7 @@ export {
   IdempotencyError,
   InvalidRequestError,
   PermissionError,
+  RateLimitError,
   VoiceApiError,
   WebhookVerificationError,
 } from "./errors.js";
@@ -25,7 +26,9 @@ export type { Credentials } from "./credentials.js";
 
 export type {
   Balance,
+  CatalogVoice,
   CostProjection,
+  CreateGeneration,
   CreateVoiceParams,
   CreateVoiceResponse,
   ErrorEnvelope,
@@ -42,8 +45,10 @@ export type {
   ReferencePrompt,
   ReadGenerationOutput,
   ReservedCost,
+  SpeechWorkClass,
   SubmitVoiceResponse,
   Voice,
+  VoiceCatalogPage,
   VoiceKind,
   VoiceLanguageState,
   VoiceUpload,

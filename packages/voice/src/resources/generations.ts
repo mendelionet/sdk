@@ -1,6 +1,6 @@
 import type { MendelioVoice } from "../client.js";
 import { ConnectionError, GenerationFailedError, InvalidRequestError } from "../errors.js";
-import type { Generation, GenerateParams } from "../types.js";
+import type { CreateGeneration, Generation, GenerateParams } from "../types.js";
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
@@ -12,14 +12,17 @@ export interface WaitForOptions {
 }
 
 export class GenerationsResource {
-  constructor(private readonly client: MendelioVoice) {}
+  constructor(
+    private readonly client: MendelioVoice,
+    private readonly fetchImpl: typeof fetch,
+  ) {}
 
   /**
    * Create a generation. Idempotency-Key defaults to a fresh UUID so a network retry replays rather
    * than double-charging; pass your own to make the whole call safely retriable across processes.
    */
-  create(params: GenerateParams, options: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<Generation> {
-    return this.client.request<Generation>("POST", "/generate", {
+  create(params: GenerateParams, options: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<CreateGeneration> {
+    return this.client.request<CreateGeneration>("POST", "/speech/jobs", {
       body: params,
       idempotencyKey: options.idempotencyKey ?? randomUuid(),
       signal: options.signal,
@@ -28,7 +31,7 @@ export class GenerationsResource {
 
   /** Fetch a generation's current state and (when completed) its short-lived output. */
   get(id: string): Promise<Generation> {
-    return this.client.request<Generation>("GET", `/generations/${encodeURIComponent(id)}`);
+    return this.client.request<Generation>("GET", `/speech/jobs/${encodeURIComponent(id)}`);
   }
 
   /**
@@ -75,10 +78,10 @@ export class GenerationsResource {
       });
     }
 
-    let res = await fetch(output.url);
+    let res = await this.fetchImpl(output.url);
     if (res.status === 403 || res.status === 404) {
       const fresh = await this.get(generation.id);
-      if (fresh.output?.status === "available") res = await fetch(fresh.output.url);
+      if (fresh.output?.status === "available") res = await this.fetchImpl(fresh.output.url);
     }
     if (!res.ok) {
       throw new ConnectionError(`Failed to download audio (HTTP ${res.status}).`);
