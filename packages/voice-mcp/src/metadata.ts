@@ -1,5 +1,5 @@
 import { MENDELIO_VOICE_MCP_VERSION } from "./version.js";
-import { MENDELIO_VOICE_IDENTITY } from "mendelio-voice";
+import { MENDELIO_VOICE_IDENTITY } from "mendelio-voice/identity";
 
 const identity = MENDELIO_VOICE_IDENTITY;
 

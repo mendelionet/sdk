@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MENDELIO_VOICE_IDENTITY } from "mendelio-voice";
+import { MENDELIO_VOICE_IDENTITY } from "mendelio-voice/identity";
 
 export {
   MENDELIO_VOICE_MCP_INSTRUCTIONS,
