@@ -3,10 +3,10 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { deviceLogin } from "mendelio-voice";
+import { deviceLogin, MENDELIO_VOICE_MCP_CLIENT_ID, MendelioVoice, readCredentials } from "mendelio-voice";
 import { buildTools } from "./core.js";
-import { resolveClient } from "./auth.js";
-import { record } from "./record.js";
+import { recordMicrophone } from "./record.js";
+import { MendelioVoiceSdkOperations } from "./sdkOperations.js";
 
 /**
  * The stdio MCP server: `npx -y mendelio-voice-mcp`. Registers the local tool set (with microphone
@@ -18,8 +18,11 @@ async function main(): Promise<void> {
 
   const tools = buildTools({
     mode: "local",
-    client: () => resolveClient(),
-    record: (seconds) => record(seconds),
+    operations: () => {
+      const apiKey = process.env.MENDELIO_VOICE_API_KEY ?? readCredentials()?.api_key;
+      return apiKey ? new MendelioVoiceSdkOperations(new MendelioVoice({ apiKey })) : null;
+    },
+    record: recordMicrophone,
     writeAudio: (bytes, name) => {
       const path = resolve(process.cwd(), name);
       writeFileSync(path, bytes);
@@ -31,6 +34,7 @@ async function main(): Promise<void> {
       return await new Promise((resolveCode, reject) => {
         let settled = false;
         deviceLogin({
+          clientId: MENDELIO_VOICE_MCP_CLIENT_ID,
           openBrowser: false,
           onCode: ({ userCode, verificationUriComplete }) => {
             settled = true;

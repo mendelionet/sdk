@@ -105,7 +105,12 @@ export interface Voice {
 
 export interface CatalogVoice {
   voiceVersionId: string;
+  /** Stable public catalogue code; never an internal registry identifier. */
+  publicId: string | null;
+  personaName: string | null;
   displayName: string;
+  description: string | null;
+  sampleText?: string | null;
   languageCode: LanguageCode;
   relation: "own" | "shared" | "offered";
   availability: "available" | "locked" | "temporarily_unavailable";
@@ -114,6 +119,9 @@ export interface CatalogVoice {
   accessClass: "public" | "basic" | "premium" | "donor" | "internal";
   styleTags: string[];
   useCaseTags: string[];
+  categoryTags: string[];
+  avatarUrl: string | null;
+  avatarLightUrl: string | null;
   preview: { url: string; expiresAt: string } | null;
 }
 

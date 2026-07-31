@@ -1,5 +1,5 @@
 import type { MendelioVoice } from "../client.js";
-import { ConnectionError, GenerationFailedError } from "../errors.js";
+import { ConnectionError } from "../errors.js";
 import type {
   CatalogVoice,
   CreateVoiceParams,
@@ -123,9 +123,6 @@ export class VoiceFailedError extends Error {
     this.name = "VoiceFailedError";
   }
 }
-// Re-export the generation counterpart so callers can catch either from one import site.
-export { GenerationFailedError };
-
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, Math.max(ms, 0)));
 }

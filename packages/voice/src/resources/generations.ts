@@ -2,8 +2,6 @@ import type { MendelioVoice } from "../client.js";
 import { ConnectionError, GenerationFailedError, InvalidRequestError } from "../errors.js";
 import type { CreateGeneration, Generation, GenerateParams } from "../types.js";
 
-const TERMINAL = new Set(["completed", "failed", "cancelled"]);
-
 export interface WaitForOptions {
   timeoutMs?: number;
   pollIntervalMs?: number;
@@ -96,10 +94,15 @@ function randomUuid(): string {
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason);
-    const timer = setTimeout(resolve, Math.max(ms, 0));
-    signal?.addEventListener("abort", () => {
+    const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason);
-    }, { once: true });
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, Math.max(ms, 0));
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

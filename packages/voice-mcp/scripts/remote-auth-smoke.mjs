@@ -44,7 +44,7 @@ assert.equal(authorizationServer.body.issuer, origin);
 assert.equal(authorizationServer.body.authorization_endpoint, `${origin}/oauth/authorize`);
 assert.equal(authorizationServer.body.token_endpoint, `${origin}/oauth/token`);
 assert.equal(authorizationServer.body.registration_endpoint, `${origin}/oauth/register`);
-assert.equal(authorizationServer.body.device_authorization_endpoint, `${origin}/v1/device/code`);
+assert.equal(authorizationServer.body.device_authorization_endpoint, `${origin}/oauth/device/code`);
 assert.ok(authorizationServer.body.grant_types_supported.includes("authorization_code"));
 assert.ok(authorizationServer.body.code_challenge_methods_supported.includes("S256"));
 assert.deepEqual(authorizationServer.body.scopes_supported, scopes);
@@ -69,9 +69,7 @@ for (const method of ["POST", "GET", "DELETE"]) {
       ? { headers: { "content-type": "application/json" }, body: JSON.stringify(initialize) }
       : {}),
   });
-  assert.equal(result.response.status, 401, `${method} /mcp must challenge`);
-  assert.equal(result.response.headers.get("www-authenticate"), expectedChallenge);
-  assert.equal(result.response.headers.get("cache-control"), "no-store");
+  assert.equal(result.response.status, 404, `${method} /mcp stays unavailable before package publish`);
 }
 
 const fakeTokens = [
@@ -81,11 +79,6 @@ const fakeTokens = [
 for (const token of fakeTokens) {
   for (const [path, init] of [
     ["/v1/audio/balance", { method: "GET" }],
-    ["/mcp", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(initialize),
-    }],
   ]) {
     const result = await json(path, {
       ...init,
@@ -102,6 +95,8 @@ assert.equal(anonymousBalance.body?.error?.code, "authentication_required");
 
 const retiredBase = await json("/v1/voice/balance");
 assert.equal(retiredBase.response.status, 404);
+const retiredDevice = await json("/v1/device/code", { method: "POST" });
+assert.equal(retiredDevice.response.status, 404);
 
 const invalidRegistration = await json("/oauth/register", {
   method: "POST",

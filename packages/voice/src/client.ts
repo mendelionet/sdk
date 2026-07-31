@@ -103,19 +103,18 @@ export class MendelioVoice {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const timeout = new AbortController();
       const timer = setTimeout(() => timeout.abort(), this.timeoutMs);
-      const signal = options.signal
-        ? anySignal([options.signal, timeout.signal])
-        : timeout.signal;
+      const combined = options.signal ? combineSignals([options.signal, timeout.signal]) : null;
       let res: Response;
       try {
         res = await this.fetchImpl(url, {
           method,
           headers,
           body: options.body === undefined ? undefined : JSON.stringify(options.body),
-          signal,
+          signal: combined?.signal ?? timeout.signal,
         });
       } catch (cause) {
         clearTimeout(timer);
+        combined?.dispose();
         lastError = new ConnectionError(
           cause instanceof Error ? cause.message : "Network request failed.",
           cause,
@@ -127,6 +126,7 @@ export class MendelioVoice {
         throw lastError;
       }
       clearTimeout(timer);
+      combined?.dispose();
 
       if (res.ok) return (await res.json()) as T;
 
@@ -193,15 +193,25 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Combine abort signals — the user's and the timeout's — without requiring AbortSignal.any. */
-function anySignal(signals: AbortSignal[]): AbortSignal {
+/** Combine abort signals and provide cleanup for listeners on long-lived caller signals. */
+function combineSignals(signals: AbortSignal[]): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
+  const listeners: { signal: AbortSignal; listener: () => void }[] = [];
   for (const s of signals) {
     if (s.aborted) {
       controller.abort(s.reason);
       break;
     }
-    s.addEventListener("abort", () => controller.abort(s.reason), { once: true });
+    const listener = () => controller.abort(s.reason);
+    s.addEventListener("abort", listener, { once: true });
+    listeners.push({ signal: s, listener });
   }
-  return controller.signal;
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      for (const entry of listeners) {
+        entry.signal.removeEventListener("abort", entry.listener);
+      }
+    },
+  };
 }

@@ -1,5 +1,14 @@
 import { z } from "zod";
-import type { CatalogVoice, Generation, MendelioVoice, Voice } from "mendelio-voice";
+import type {
+  Balance,
+  CatalogVoice,
+  CreateGeneration,
+  GenerateParams,
+  Generation,
+  LanguageCode,
+  ReferencePrompt,
+  Voice,
+} from "mendelio-voice";
 import { VoiceApiError } from "mendelio-voice";
 
 /**
@@ -20,17 +29,53 @@ export interface ToolDef {
   handler: (args: Record<string, unknown>) => Promise<ToolContent>;
 }
 
-export interface ToolContext {
-  /** The authenticated SDK client, or null when no key is available. */
-  client: () => MendelioVoice | null;
-  mode: "local" | "remote";
+/**
+ * The complete transport-neutral capability required by the shared remote tool set.
+ * Implementations may call the public SDK or the platform domain directly; the core never knows.
+ */
+export interface VoiceMcpOperations {
+  listVoices(): Promise<CatalogVoice[]>;
+  createGeneration(params: GenerateParams): Promise<CreateGeneration>;
+  waitForGeneration(id: string): Promise<Generation>;
+  getGeneration(id: string): Promise<Generation>;
+  getBalance(): Promise<Balance>;
+  listReferencePrompts(params?: { language?: LanguageCode }): Promise<ReferencePrompt[]>;
+}
+
+/** Local-only operations that are intentionally impossible to provide to remote mode. */
+export interface LocalVoiceMcpOperations extends VoiceMcpOperations {
+  synthesizeAndDownload(params: GenerateParams): Promise<{
+    generation: Generation;
+    audio: Uint8Array;
+  }>;
+  cloneVoiceFromFile(args: {
+    name: string;
+    referenceTextId: string;
+    audioPath: string;
+    speakerRelationship: "self" | "authorized";
+  }): Promise<Voice>;
+}
+
+interface SharedToolContext<Operations extends VoiceMcpOperations> {
+  /** Request-scoped operations, or null when no trusted principal is available. */
+  operations: () => Operations | null;
+}
+
+export interface RemoteToolContext extends SharedToolContext<VoiceMcpOperations> {
+  mode: "remote";
+}
+
+export interface LocalToolContext extends SharedToolContext<LocalVoiceMcpOperations> {
+  mode: "local";
+  /** Where generated audio is written. Required because local generation always writes a file. */
+  writeAudio: (bytes: Uint8Array, suggestedName: string) => string;
   /** Local only: begin device login and return the code + URL immediately. */
   login?: () => Promise<{ userCode: string; verificationUriComplete: string }>;
   /** Local only: record from the microphone to a WAV path for the given seconds. */
   record?: (seconds: number) => Promise<{ ok: true; path: string } | { ok: false; hint: string }>;
-  /** Local only: where generated audio is written. */
-  writeAudio?: (bytes: Uint8Array, suggestedName: string) => string;
 }
+
+export type ToolContext = LocalToolContext | RemoteToolContext;
 
 const WIZARD_URL = "https://voice.mendelio.net/voices";
 const CREDIT_URL = "https://voice.mendelio.net/credit";
@@ -58,7 +103,7 @@ function notAuthenticated(mode: ToolContext["mode"]): ToolContent {
 
 /** Preserve actionable API meaning without reflecting credentials or unknown internal messages. */
 function apiFailure(error: unknown): ToolContent {
-  if (error instanceof VoiceApiError) {
+  if (error instanceof VoiceApiError || isOperationError(error)) {
     const actions: Record<string, { summary: string; action: string }> = {
       authentication_required: {
         summary: "Authentication is no longer valid. Sign in or reconnect the connector.",
@@ -104,6 +149,10 @@ function apiFailure(error: unknown): ToolContent {
   );
 }
 
+function isOperationError(error: unknown): error is { code: string; requestId?: string } {
+  return !!error && typeof error === "object" && typeof (error as { code?: unknown }).code === "string";
+}
+
 function publicVoice(voice: Voice): Record<string, unknown> {
   return {
     id: voice.id,
@@ -119,7 +168,11 @@ function publicVoice(voice: Voice): Record<string, unknown> {
 function publicCatalogVoice(voice: CatalogVoice): Record<string, unknown> {
   return {
     id: voice.voiceVersionId,
+    public_id: voice.publicId,
+    persona_name: voice.personaName,
     name: voice.displayName,
+    description: voice.description,
+    ...(voice.sampleText !== undefined ? { sample_text: voice.sampleText } : {}),
     language: voice.languageCode,
     relation: voice.relation,
     availability: voice.availability,
@@ -127,6 +180,9 @@ function publicCatalogVoice(voice: CatalogVoice): Record<string, unknown> {
     access_class: voice.accessClass,
     style_tags: voice.styleTags,
     use_case_tags: voice.useCaseTags,
+    category_tags: voice.categoryTags,
+    avatar_url: voice.avatarUrl,
+    avatar_light_url: voice.avatarLightUrl,
     preview: voice.preview,
     ...(voice.safeReason ? { safe_reason: voice.safeReason } : {}),
   };
@@ -143,20 +199,26 @@ function publicGeneration(generation: Generation): Record<string, unknown> {
   };
 }
 
-async function readyVoices(client: MendelioVoice): Promise<CatalogVoice[]> {
-  const voices: CatalogVoice[] = [];
-  for await (const voice of client.voices.list()) {
-    if (voice.availability === "available" && voice.capabilities.includes("speech")) voices.push(voice);
-  }
-  return voices;
+function publicReferencePrompt(prompt: ReferencePrompt): Record<string, unknown> {
+  return {
+    id: prompt.id,
+    language: prompt.language,
+    text: prompt.text,
+  };
+}
+
+async function readyVoices(operations: VoiceMcpOperations): Promise<CatalogVoice[]> {
+  return (await operations.listVoices()).filter(
+    (voice) => voice.availability === "available" && voice.capabilities.includes("speech"),
+  );
 }
 
 async function resolveGenerationVoice(
-  client: MendelioVoice,
+  operations: VoiceMcpOperations,
   requestedVoiceId: unknown,
 ): Promise<{ voiceVersionId: string } | ToolContent> {
   if (typeof requestedVoiceId === "string") return { voiceVersionId: requestedVoiceId };
-  const voices = await readyVoices(client);
+  const voices = await readyVoices(operations);
   if (voices.length === 1) return { voiceVersionId: voices[0]!.voiceVersionId };
   if (voices.length === 0) {
     return result(
@@ -173,9 +235,25 @@ async function resolveGenerationVoice(
   );
 }
 
+async function cloneVoiceFromFile(
+  operations: LocalVoiceMcpOperations,
+  args: {
+    name: string;
+    referenceTextId: string;
+    audioPath: string;
+    speakerRelationship: "self" | "authorized";
+  },
+): Promise<ToolContent> {
+  const ready = await operations.cloneVoiceFromFile(args);
+  return result(`Voice ${ready.name} is ready.`, {
+    status: "ready",
+    voice: publicVoice(ready),
+  });
+}
+
 export function buildTools(ctx: ToolContext): ToolDef[] {
-  const local = ctx.mode === "local";
-  const requireClient = (): MendelioVoice | null => ctx.client();
+  const localContext = ctx.mode === "local" ? ctx : null;
+  const local = localContext !== null;
   const tools: ToolDef[] = [];
 
   tools.push({
@@ -189,20 +267,20 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
       ...(local ? { output_path: z.string().optional().describe("Where to write the audio file.") } : {}),
     },
     handler: async (args) => {
-      const client = requireClient();
-      if (!client) return notAuthenticated(ctx.mode);
+      const operations = ctx.operations();
+      if (!operations) return notAuthenticated(ctx.mode);
       try {
-        const resolved = await resolveGenerationVoice(client, args.voice_version_id);
+        const resolved = await resolveGenerationVoice(operations, args.voice_version_id);
         if ("content" in resolved) return resolved;
         const format = args.format as "mp3" | "wav" | undefined;
 
-        if (!local) {
-          const created = await client.generations.create({
+        if (!localContext) {
+          const created = await operations.createGeneration({
             text: String(args.text),
             voiceVersionId: resolved.voiceVersionId,
             format,
           });
-          const generation = await client.generations.waitFor(created.id);
+          const generation = await operations.waitForGeneration(created.id);
           if (generation.output?.status !== "available") {
             return result(
               `Generation ${generation.id} completed without a downloadable output.`,
@@ -216,13 +294,13 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
           );
         }
 
-        const { generation, audio } = await client.speak({
+        const { generation, audio } = await (operations as LocalVoiceMcpOperations).synthesizeAndDownload({
           text: String(args.text),
           voiceVersionId: resolved.voiceVersionId,
           format,
         });
         const selectedFormat = format ?? "mp3";
-        const path = ctx.writeAudio!(
+        const path = localContext.writeAudio(
           audio,
           String(args.output_path ?? `voice-${generation.id.slice(0, 8)}.${selectedFormat}`),
         );
@@ -250,11 +328,10 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     description: "List available system voices and personal clones.",
     inputSchema: {},
     handler: async () => {
-      const client = requireClient();
-      if (!client) return notAuthenticated(ctx.mode);
+      const operations = ctx.operations();
+      if (!operations) return notAuthenticated(ctx.mode);
       try {
-        const voices: CatalogVoice[] = [];
-        for await (const voice of client.voices.list()) voices.push(voice);
+        const voices = await operations.listVoices();
         return result(
           voices.length ? `Found ${voices.length} voice(s).` : "No voices are available.",
           { voices: voices.map(publicCatalogVoice) },
@@ -270,10 +347,10 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     description: "Get the state, cost and output metadata of a generation.",
     inputSchema: { generation_id: z.string().uuid() },
     handler: async (args) => {
-      const client = requireClient();
-      if (!client) return notAuthenticated(ctx.mode);
+      const operations = ctx.operations();
+      if (!operations) return notAuthenticated(ctx.mode);
       try {
-        const generation = await client.generations.get(String(args.generation_id));
+        const generation = await operations.getGeneration(String(args.generation_id));
         return result(
           `Generation ${generation.id} is ${generation.state}.`,
           { generation: publicGeneration(generation) },
@@ -289,10 +366,10 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     description: "Read the current Mendelio Voice credit balance in audio seconds.",
     inputSchema: {},
     handler: async () => {
-      const client = requireClient();
-      if (!client) return notAuthenticated(ctx.mode);
+      const operations = ctx.operations();
+      if (!operations) return notAuthenticated(ctx.mode);
       try {
-        const balance = await client.balance.get();
+        const balance = await operations.getBalance();
         return result(
           `${balance.available} audio seconds are available.`,
           {
@@ -316,21 +393,15 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     description: "List the exact reference texts that can be read aloud when cloning a voice.",
     inputSchema: { language: z.enum(["cs", "en", "de"]).optional() },
     handler: async (args) => {
-      const client = requireClient();
-      if (!client) return notAuthenticated(ctx.mode);
+      const operations = ctx.operations();
+      if (!operations) return notAuthenticated(ctx.mode);
       try {
-        const prompts = await client.referencePrompts.list({
+        const prompts = await operations.listReferencePrompts({
           language: args.language as "cs" | "en" | "de" | undefined,
         });
         return result(
           `Found ${prompts.length} reference prompt(s). Read the chosen text exactly when cloning.`,
-          {
-            prompts: prompts.map((prompt) => ({
-              id: prompt.id,
-              language: prompt.language,
-              text: prompt.text,
-            })),
-          },
+          { prompts: prompts.map(publicReferencePrompt) },
         );
       } catch (error) {
         return apiFailure(error);
@@ -350,24 +421,14 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
         speaker_relationship: z.enum(["self", "authorized"]),
       },
       handler: async (args) => {
-        const client = requireClient();
-        if (!client) return notAuthenticated(ctx.mode);
+        const operations = ctx.operations();
+        if (!operations) return notAuthenticated(ctx.mode);
         try {
-          const { readFileSync } = await import("node:fs");
-          const voice = await client.voices.createFromFile({
+          return await cloneVoiceFromFile(operations as LocalVoiceMcpOperations, {
             name: String(args.name),
             referenceTextId: String(args.reference_text_id),
-            file: readFileSync(String(args.audio_path)),
-            rightsAttestation: {
-              accepted: true,
-              version: "2026-07-22-v1",
-              speakerRelationship: args.speaker_relationship as "self" | "authorized",
-            },
-          });
-          const ready = await client.voices.waitForReady(voice.id);
-          return result(`Voice ${ready.name} is ready.`, {
-            status: "ready",
-            voice: publicVoice(ready),
+            audioPath: String(args.audio_path),
+            speakerRelationship: args.speaker_relationship as "self" | "authorized",
           });
         } catch (error) {
           return apiFailure(error);
@@ -388,7 +449,8 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     });
   }
 
-  if (local && ctx.record) {
+  if (localContext?.record) {
+    const record = localContext.record;
     tools.push({
       name: "voice_record_and_clone",
       description:
@@ -402,24 +464,20 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
         speaker_relationship: z.enum(["self", "authorized"]).optional(),
       },
       handler: async (args) => {
-        const client = requireClient();
-        if (!client) return notAuthenticated(ctx.mode);
+        const operations = ctx.operations();
+        if (!operations) return notAuthenticated(ctx.mode);
         try {
           if (!args.reference_text_id) {
-            const prompts = await client.referencePrompts.list();
+            const prompts = await operations.listReferencePrompts();
             return result(
               "Choose a reference_text_id and call the tool again.",
               {
                 status: "reference_prompt_required",
-                prompts: prompts.map((prompt) => ({
-                  id: prompt.id,
-                  language: prompt.language,
-                  text: prompt.text,
-                })),
+                prompts: prompts.map(publicReferencePrompt),
               },
             );
           }
-          const prompts = await client.referencePrompts.list();
+          const prompts = await operations.listReferencePrompts();
           const prompt = prompts.find((candidate) => candidate.id === args.reference_text_id);
           if (!prompt) {
             return result(
@@ -433,7 +491,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
               "Have the speaker read the supplied reference text, then call again with confirmed:true.",
               {
                 status: "confirmation_required",
-                prompt: { id: prompt.id, language: prompt.language, text: prompt.text },
+                prompt: publicReferencePrompt(prompt),
               },
             );
           }
@@ -444,7 +502,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
               true,
             );
           }
-          const recording = await ctx.record!(Number(args.duration_seconds ?? 12));
+          const recording = await record(Number(args.duration_seconds ?? 12));
           if (!recording.ok) {
             return result(
               recording.hint,
@@ -452,21 +510,11 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
               true,
             );
           }
-          const { readFileSync } = await import("node:fs");
-          const voice = await client.voices.createFromFile({
+          return await cloneVoiceFromFile(operations as LocalVoiceMcpOperations, {
             name: String(args.name),
             referenceTextId: String(args.reference_text_id),
-            file: readFileSync(recording.path),
-            rightsAttestation: {
-              accepted: true,
-              version: "2026-07-22-v1",
-              speakerRelationship: args.speaker_relationship as "self" | "authorized",
-            },
-          });
-          const ready = await client.voices.waitForReady(voice.id);
-          return result(`Voice ${ready.name} is ready.`, {
-            status: "ready",
-            voice: publicVoice(ready),
+            audioPath: recording.path,
+            speakerRelationship: args.speaker_relationship as "self" | "authorized",
           });
         } catch (error) {
           return apiFailure(error);
@@ -475,14 +523,15 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     });
   }
 
-  if (local && ctx.login) {
+  if (localContext?.login) {
+    const loginDevice = localContext.login;
     tools.push({
       name: "voice_login",
       description: "Begin Mendelio Voice device login and return the one-click approval URL.",
       inputSchema: {},
       handler: async () => {
         try {
-          const login = await ctx.login!();
+          const login = await loginDevice();
           return result(
             "Open the authorization URL and approve access. A later tool call will use the saved credential.",
             {

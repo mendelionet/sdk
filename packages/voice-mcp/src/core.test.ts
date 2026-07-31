@@ -1,17 +1,20 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type {
   Balance,
   CatalogVoice,
+  CreateGeneration,
+  GenerateParams,
   Generation,
-  MendelioVoice,
   ReferencePrompt,
   Voice,
 } from "mendelio-voice";
 import { VoiceApiError } from "mendelio-voice";
-import { buildTools, type ToolDef } from "./core.js";
+import {
+  buildTools,
+  type LocalToolContext,
+  type LocalVoiceMcpOperations,
+  type ToolDef,
+} from "./core.js";
 
 const VOICE_ID_A = "00000000-0000-4000-8000-000000000001";
 const VOICE_ID_B = "00000000-0000-4000-8000-000000000002";
@@ -37,7 +40,11 @@ function voice(id = VOICE_ID_A, overrides: Partial<Voice> = {}): Voice {
 function catalogVoice(id = VOICE_ID_A, overrides: Partial<CatalogVoice> = {}): CatalogVoice {
   return {
     voiceVersionId: id,
+    publicId: "adela",
+    personaName: "Adéla",
     displayName: "Adéla",
+    description: "Klidný hlas pro vyprávění.",
+    sampleText: "Ukázkový text.",
     languageCode: "cs",
     relation: "offered",
     availability: "available",
@@ -45,6 +52,9 @@ function catalogVoice(id = VOICE_ID_A, overrides: Partial<CatalogVoice> = {}): C
     accessClass: "public",
     styleTags: [],
     useCaseTags: [],
+    categoryTags: [],
+    avatarUrl: null,
+    avatarLightUrl: null,
     preview: null,
     ...overrides,
   };
@@ -82,13 +92,7 @@ function generation(overrides: Partial<Generation> = {}): Generation {
   };
 }
 
-function asyncValues<T>(values: T[]): AsyncGenerator<T, void, unknown> {
-  return (async function* () {
-    yield* values;
-  })();
-}
-
-function fakeClient(options: {
+function fakeOperations(options: {
   voices?: CatalogVoice[];
   generation?: Generation;
   balance?: Balance;
@@ -113,31 +117,29 @@ function fakeClient(options: {
     },
   ];
   const calls = {
-    createGeneration: vi.fn(async () => generation({ state: "queued", output: null })),
-    waitForGeneration: vi.fn(async () => finished),
-    getGeneration: vi.fn(async () => finished),
+    createGeneration: vi.fn(async (_params: GenerateParams) => generation({ state: "queued", output: null }) as unknown as CreateGeneration),
+    waitForGeneration: vi.fn(async (_id: string) => finished),
+    getGeneration: vi.fn(async (_id: string) => finished),
     getBalance: vi.fn(async () => balance),
     listPrompts: vi.fn(async () => prompts),
-    createVoice: vi.fn(async () => voice()),
-    waitForVoice: vi.fn(async () => voice()),
+    createVoice: vi.fn(async (_args: Parameters<LocalVoiceMcpOperations["cloneVoiceFromFile"]>[0]) => voice()),
+    waitForVoice: vi.fn(async (_id: string) => voice()),
     speak: vi.fn(async () => ({ generation: finished, audio: new Uint8Array([1, 2, 3]) })),
   };
-  const client = {
-    voices: {
-      list: () => asyncValues(listedVoices),
-      createFromFile: calls.createVoice,
-      waitForReady: calls.waitForVoice,
+  const operations: LocalVoiceMcpOperations = {
+    listVoices: async () => listedVoices,
+    createGeneration: calls.createGeneration,
+    waitForGeneration: calls.waitForGeneration,
+    getGeneration: calls.getGeneration,
+    getBalance: calls.getBalance,
+    listReferencePrompts: calls.listPrompts,
+    synthesizeAndDownload: calls.speak,
+    cloneVoiceFromFile: async (args) => {
+      await calls.createVoice(args);
+      return calls.waitForVoice(VOICE_ID_A);
     },
-    generations: {
-      create: calls.createGeneration,
-      waitFor: calls.waitForGeneration,
-      get: calls.getGeneration,
-    },
-    balance: { get: calls.getBalance },
-    referencePrompts: { list: calls.listPrompts },
-    speak: calls.speak,
-  } as unknown as MendelioVoice;
-  return { client, calls };
+  };
+  return { operations, calls };
 }
 
 function byName(tools: ToolDef[], name: string): ToolDef {
@@ -146,17 +148,24 @@ function byName(tools: ToolDef[], name: string): ToolDef {
   return tool;
 }
 
+function buildLocalTools(
+  context: Omit<LocalToolContext, "mode" | "writeAudio"> &
+    Partial<Pick<LocalToolContext, "writeAudio">>,
+): ToolDef[] {
+  const { writeAudio = () => "/tmp/audio.mp3", ...rest } = context;
+  return buildTools({ ...rest, mode: "local", writeAudio });
+}
+
 describe("buildTools modes", () => {
   it("keeps filesystem, microphone and login capabilities local", () => {
-    const { client } = fakeClient();
-    const local = buildTools({
-      mode: "local",
-      client: () => client,
+    const { operations } = fakeOperations();
+    const local = buildLocalTools({
+      operations: () => operations,
       login: async () => ({ userCode: "ABCD-EFGH", verificationUriComplete: "https://login.example" }),
       record: async () => ({ ok: true, path: "/tmp/voice.wav" }),
       writeAudio: () => "/tmp/audio.mp3",
     });
-    const remote = buildTools({ mode: "remote", client: () => client });
+    const remote = buildTools({ mode: "remote", operations: () => operations });
 
     expect(local.map((tool) => tool.name)).toEqual([
       "voice_generate_speech",
@@ -186,8 +195,8 @@ describe("buildTools modes", () => {
   });
 
   it("does not create a voice from the remote web-flow tool", async () => {
-    const { client, calls } = fakeClient();
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_clone_voice");
+    const { operations, calls } = fakeOperations();
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_clone_voice");
     const response = await tool.handler({});
 
     expect(response.structuredContent).toMatchObject({
@@ -198,8 +207,8 @@ describe("buildTools modes", () => {
   });
 
   it("returns mode-specific authentication recovery without invoking an SDK client", async () => {
-    const local = buildTools({ mode: "local", client: () => null });
-    const remote = buildTools({ mode: "remote", client: () => null });
+    const local = buildLocalTools({ operations: () => null });
+    const remote = buildTools({ mode: "remote", operations: () => null });
 
     const localResult = await byName(local, "voice_get_balance").handler({});
     const remoteResult = await byName(remote, "voice_get_balance").handler({});
@@ -215,12 +224,12 @@ describe("buildTools modes", () => {
   });
 
   it("returns only the device authorization contract from local login", async () => {
-    const { client } = fakeClient();
+    const { operations } = fakeOperations();
     const login = vi.fn(async () => ({
       userCode: "ABCD-EFGH",
       verificationUriComplete: "https://voice.example/activate?code=ABCD-EFGH",
     }));
-    const tool = byName(buildTools({ mode: "local", client: () => client, login }), "voice_login");
+    const tool = byName(buildLocalTools({ operations: () => operations, login }), "voice_login");
     const response = await tool.handler({});
 
     expect(login).toHaveBeenCalledOnce();
@@ -235,10 +244,10 @@ describe("buildTools modes", () => {
 
 describe("tool SDK contracts", () => {
   it("reports the no-ready-voice state without starting a generation", async () => {
-    const { client, calls } = fakeClient({
+    const { operations, calls } = fakeOperations({
       voices: [catalogVoice(VOICE_ID_A, { availability: "temporarily_unavailable" })],
     });
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_generate_speech");
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
     const response = await tool.handler({ text: "Ahoj" });
 
     expect(response.structuredContent).toMatchObject({
@@ -249,10 +258,10 @@ describe("tool SDK contracts", () => {
   });
 
   it("requires an explicit choice when several voices are ready", async () => {
-    const { client, calls } = fakeClient({
+    const { operations, calls } = fakeOperations({
       voices: [catalogVoice(VOICE_ID_A), catalogVoice(VOICE_ID_B, { displayName: "Štěpán" })],
     });
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_generate_speech");
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
     const response = await tool.handler({ text: "Ahoj" });
 
     expect(response.structuredContent).toMatchObject({
@@ -263,8 +272,8 @@ describe("tool SDK contracts", () => {
   });
 
   it("passes normalized remote generation arguments and returns output metadata", async () => {
-    const { client, calls } = fakeClient();
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_generate_speech");
+    const { operations, calls } = fakeOperations();
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
     const response = await tool.handler({ text: "Ahoj", format: "wav" });
 
     expect(calls.createGeneration).toHaveBeenCalledWith({
@@ -287,10 +296,10 @@ describe("tool SDK contracts", () => {
   });
 
   it("passes local generation arguments and returns the written path", async () => {
-    const { client, calls } = fakeClient();
+    const { operations, calls } = fakeOperations();
     const writeAudio = vi.fn(() => "/safe/result.mp3");
     const tool = byName(
-      buildTools({ mode: "local", client: () => client, writeAudio }),
+      buildLocalTools({ operations: () => operations, writeAudio }),
       "voice_generate_speech",
     );
     const response = await tool.handler({
@@ -313,8 +322,8 @@ describe("tool SDK contracts", () => {
   });
 
   it("maps list, get, balance and reference prompt results to structured contracts", async () => {
-    const { client, calls } = fakeClient();
-    const tools = buildTools({ mode: "remote", client: () => client });
+    const { operations, calls } = fakeOperations();
+    const tools = buildTools({ mode: "remote", operations: () => operations });
 
     const voices = await byName(tools, "voice_list_voices").handler({});
     const generationResult = await byName(tools, "voice_get_generation").handler({
@@ -324,7 +333,20 @@ describe("tool SDK contracts", () => {
     const prompts = await byName(tools, "voice_list_reference_prompts").handler({ language: "cs" });
 
     expect(voices.structuredContent).toMatchObject({
-      voices: [{ id: VOICE_ID_A, relation: "offered", availability: "available" }],
+      voices: [{
+        id: VOICE_ID_A,
+        relation: "offered",
+        availability: "available",
+        public_id: "adela",
+        persona_name: "Adéla",
+        description: "Klidný hlas pro vyprávění.",
+        sample_text: "Ukázkový text.",
+        style_tags: [],
+        use_case_tags: [],
+        category_tags: [],
+        avatar_url: null,
+        avatar_light_url: null,
+      }],
     });
     expect(generationResult.structuredContent).toMatchObject({ generation: { id: GENERATION_ID } });
     expect(balance.structuredContent).toMatchObject({ balance: { available: 18, reserved: 2 } });
@@ -334,11 +356,9 @@ describe("tool SDK contracts", () => {
   });
 
   it("runs local clone create-upload-submit through the SDK and waits for ready", async () => {
-    const { client, calls } = fakeClient();
-    const dir = mkdtempSync(join(tmpdir(), "mendelio-mcp-test-"));
-    const audioPath = join(dir, "voice.wav");
-    writeFileSync(audioPath, new Uint8Array([1, 2, 3]));
-    const tool = byName(buildTools({ mode: "local", client: () => client }), "voice_clone_voice");
+    const { operations, calls } = fakeOperations();
+    const audioPath = "/safe/voice.wav";
+    const tool = byName(buildLocalTools({ operations: () => operations }), "voice_clone_voice");
     const response = await tool.handler({
       name: "Můj hlas",
       reference_text_id: "prompt-cs",
@@ -350,25 +370,19 @@ describe("tool SDK contracts", () => {
     expect(calls.createVoice).toHaveBeenCalledWith({
       name: "Můj hlas",
       referenceTextId: "prompt-cs",
-      file: expect.any(Buffer),
-      rightsAttestation: {
-        accepted: true,
-        version: "2026-07-22-v1",
-        speakerRelationship: "self",
-      },
+      audioPath,
+      speakerRelationship: "self",
     });
     expect(calls.waitForVoice).toHaveBeenCalledWith(VOICE_ID_A);
     expect(response.structuredContent).toMatchObject({ status: "ready", voice: { id: VOICE_ID_A } });
   });
 
   it("runs record-and-clone only after prompt selection and confirmation", async () => {
-    const { client, calls } = fakeClient();
-    const dir = mkdtempSync(join(tmpdir(), "mendelio-mcp-record-test-"));
-    const audioPath = join(dir, "recording.wav");
-    writeFileSync(audioPath, new Uint8Array([4, 5, 6]));
+    const { operations, calls } = fakeOperations();
+    const audioPath = "/safe/recording.wav";
     const record = vi.fn(async () => ({ ok: true as const, path: audioPath }));
     const tool = byName(
-      buildTools({ mode: "local", client: () => client, record }),
+      buildLocalTools({ operations: () => operations, record }),
       "voice_record_and_clone",
     );
 
@@ -411,12 +425,8 @@ describe("tool SDK contracts", () => {
     expect(calls.createVoice).toHaveBeenCalledWith({
       name: "Můj hlas",
       referenceTextId: "prompt-cs",
-      file: expect.any(Buffer),
-      rightsAttestation: {
-        accepted: true,
-        version: "2026-07-22-v1",
-        speakerRelationship: "authorized",
-      },
+      audioPath,
+      speakerRelationship: "authorized",
     });
     expect(calls.waitForVoice).toHaveBeenCalledWith(VOICE_ID_A);
     expect(completed.structuredContent).toMatchObject({
@@ -426,10 +436,10 @@ describe("tool SDK contracts", () => {
   });
 
   it("stops record-and-clone when the local recorder is unavailable", async () => {
-    const { client, calls } = fakeClient();
+    const { operations, calls } = fakeOperations();
     const record = vi.fn(async () => ({ ok: false as const, hint: "recorder unavailable" }));
     const tool = byName(
-      buildTools({ mode: "local", client: () => client, record }),
+      buildLocalTools({ operations: () => operations, record }),
       "voice_record_and_clone",
     );
     const response = await tool.handler({
@@ -449,10 +459,10 @@ describe("tool SDK contracts", () => {
   });
 
   it("marks a completed remote generation without downloadable output as an error", async () => {
-    const { client } = fakeClient({
+    const { operations } = fakeOperations({
       generation: generation({ output: null }),
     });
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_generate_speech");
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
     const response = await tool.handler({
       text: "Ahoj",
       voice_version_id: VOICE_ID_A,
@@ -469,7 +479,7 @@ describe("tool SDK contracts", () => {
 describe("safe failures", () => {
   it("preserves permission denial as an error without reflecting a credential", async () => {
     const secret = "mvo_do_not_leak";
-    const { client, calls } = fakeClient();
+    const { operations, calls } = fakeOperations();
     calls.getBalance.mockRejectedValue(
       new VoiceApiError(403, {
         type: "permission_error",
@@ -479,7 +489,7 @@ describe("safe failures", () => {
         request_id: "req_safe",
       }),
     );
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_get_balance");
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_get_balance");
     const response = await tool.handler({});
 
     expect(response.isError).toBe(true);
@@ -494,9 +504,9 @@ describe("safe failures", () => {
 
   it("does not reflect unknown thrown error details", async () => {
     const secret = "mv_live_do_not_leak";
-    const { client, calls } = fakeClient();
+    const { operations, calls } = fakeOperations();
     calls.getBalance.mockRejectedValue(new Error(secret));
-    const tool = byName(buildTools({ mode: "remote", client: () => client }), "voice_get_balance");
+    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_get_balance");
     const response = await tool.handler({});
 
     expect(response.isError).toBe(true);

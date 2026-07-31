@@ -10,7 +10,9 @@ const WIZARD_URL = "https://voice.mendelio.net/voices";
  * throwing — the server-side trim (podcast-renderer) cleans up the countdown/silence, so we do not
  * trim here.
  */
-export async function record(seconds: number): Promise<{ ok: true; path: string } | { ok: false; hint: string }> {
+export async function recordMicrophone(
+  seconds: number,
+): Promise<{ ok: true; path: string } | { ok: false; hint: string }> {
   const out = join(tmpdir(), `mendelio-voice-${Date.now()}.wav`);
   const dur = Math.max(3, Math.min(seconds, 60));
 

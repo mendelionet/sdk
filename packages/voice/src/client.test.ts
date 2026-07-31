@@ -84,6 +84,29 @@ describe("auth key resolution", () => {
       else process.env.XDG_CONFIG_HOME = previousConfigHome;
     }
   });
+
+  it("removes the caller abort listener after a completed request", async () => {
+    const { fetch } = queuedFetch([
+      json(200, {
+        object: "voice.balance",
+        unit: "audio_second",
+        total: 10,
+        reserved: 1,
+        available: 9,
+        updated_at: "2026-07-24T00:00:00Z",
+      }),
+    ]);
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+
+    await client.request("GET", "/balance", { signal: controller.signal });
+
+    expect(add).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(remove.mock.calls[0]?.[1]).toBe(add.mock.calls[0]?.[1]);
+  });
 });
 
 describe("current public API routing", () => {
@@ -256,7 +279,10 @@ describe("voices pagination + speak", () => {
   it("iterates across pages", async () => {
     const voice = (id: string) => ({
       voiceVersionId: id,
+      publicId: null,
+      personaName: null,
       displayName: id,
+      description: null,
       languageCode: "cs",
       relation: "offered",
       availability: "available",
@@ -264,6 +290,9 @@ describe("voices pagination + speak", () => {
       accessClass: "public",
       styleTags: [],
       useCaseTags: [],
+      categoryTags: [],
+      avatarUrl: null,
+      avatarLightUrl: null,
       preview: null,
     });
     const { fetch } = queuedFetch([
@@ -283,7 +312,10 @@ describe("voices pagination + speak", () => {
       capabilities: ("speech" | "preview")[],
     ) => ({
       voiceVersionId: id,
+      publicId: null,
+      personaName: null,
       displayName: id,
+      description: null,
       languageCode: "cs",
       relation: "offered",
       availability,
@@ -291,6 +323,9 @@ describe("voices pagination + speak", () => {
       accessClass: "public",
       styleTags: [],
       useCaseTags: [],
+      categoryTags: [],
+      avatarUrl: null,
+      avatarLightUrl: null,
       preview: null,
     });
     const { fetch, calls } = queuedFetch([

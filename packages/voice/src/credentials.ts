@@ -18,8 +18,13 @@ function credentialsPath(): string {
 export function readCredentials(): Credentials | undefined {
   try {
     const raw = readFileSync(credentialsPath(), "utf8");
-    const parsed = JSON.parse(raw) as Credentials;
-    return typeof parsed?.api_key === "string" ? parsed : undefined;
+    const parsed = JSON.parse(raw) as Partial<Credentials>;
+    return typeof parsed?.api_key === "string" &&
+      parsed.api_key.length > 0 &&
+      typeof parsed.key_prefix === "string" &&
+      typeof parsed.created_at === "string"
+      ? parsed as Credentials
+      : undefined;
   } catch {
     return undefined;
   }
