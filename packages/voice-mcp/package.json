@@ -1,6 +1,6 @@
 {
   "name": "mendelio-voice-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Generate and play speech with Hezky česky, powered by Mendelio Voice. Choose from 190+ unique voices—including people, creatures, dragons, and robots—or create a personal voice from an authorized recording.",
   "mcpName": "io.github.mendelionet/mendelio-voice",
   "license": "MIT",
@@ -59,7 +59,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "mendelio-voice": "workspace:0.1.1",
+    "mendelio-voice": "workspace:0.1.2",
     "zod": "^3.23.0"
   },
   "devDependencies": {
