@@ -1,5 +1,13 @@
 # mendelio-voice-mcp
 
+## 0.1.2
+
+### Patch Changes
+
+- 9c760b5: Keep the npm package description complete within the registry's 255-character limit while preserving the fuller canonical MCP server description.
+- Updated dependencies [9c760b5]
+  - mendelio-voice@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes
