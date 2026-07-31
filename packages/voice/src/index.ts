@@ -1,5 +1,7 @@
 export { MendelioVoice } from "./client.js";
 export type { MendelioVoiceOptions, RequestOptions } from "./client.js";
+export { MENDELIO_VOICE_IDENTITY } from "./identity.js";
+export type { MendelioVoiceIdentity } from "./identity.js";
 
 export {
   ApiError,

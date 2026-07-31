@@ -9,8 +9,10 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "sync:mcp-metadata": "node packages/voice-mcp/scripts/sync-metadata.mjs --write",
+    "check:mcp-metadata": "node packages/voice-mcp/scripts/sync-metadata.mjs --check",
+    "version-packages": "changeset version && pnpm sync:mcp-metadata",
+    "release": "pnpm check:mcp-metadata && pnpm build && changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",

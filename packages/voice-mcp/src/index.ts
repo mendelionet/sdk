@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { deviceLogin, MENDELIO_VOICE_MCP_CLIENT_ID, MendelioVoice, readCredentials } from "mendelio-voice";
-import { buildTools } from "./core.js";
+import {
+  buildTools,
+  MENDELIO_VOICE_MCP_INSTRUCTIONS,
+  MENDELIO_VOICE_MCP_SERVER_INFO,
+} from "./core.js";
 import { recordMicrophone } from "./record.js";
 import { MendelioVoiceSdkOperations } from "./sdkOperations.js";
 
@@ -14,7 +18,9 @@ import { MendelioVoiceSdkOperations } from "./sdkOperations.js";
  * tool call, so a login that completes in the background is picked up by the next call.
  */
 async function main(): Promise<void> {
-  const server = new McpServer({ name: "mendelio-voice", version: "0.1.0" });
+  const server = new McpServer(MENDELIO_VOICE_MCP_SERVER_INFO, {
+    instructions: MENDELIO_VOICE_MCP_INSTRUCTIONS,
+  });
 
   const tools = buildTools({
     mode: "local",

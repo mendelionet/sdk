@@ -1,4 +1,15 @@
 import { z } from "zod";
+import { MENDELIO_VOICE_IDENTITY } from "mendelio-voice";
+
+export {
+  MENDELIO_VOICE_MCP_INSTRUCTIONS,
+  MENDELIO_VOICE_MCP_SERVER_INFO,
+} from "./metadata.js";
+
+const TECHNICAL_NAME = MENDELIO_VOICE_IDENTITY.technical.name;
+const PUBLIC_NAME = MENDELIO_VOICE_IDENTITY.surfaces.hezkyCesky.name;
+const VOICE_FAMILY = `${PUBLIC_NAME} / ${TECHNICAL_NAME}`;
+const CATALOG_FLOOR = MENDELIO_VOICE_IDENTITY.catalog.minimumUniqueVoices;
 import type {
   Balance,
   CatalogVoice,
@@ -259,7 +270,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
   tools.push({
     name: "voice_generate_speech",
     description:
-      "Generate speech from text. If several voices are ready, first returns the choices and asks for voice_version_id.",
+      `Generate playable speech from text with ${PUBLIC_NAME}, powered by ${TECHNICAL_NAME}. Use an available voice and style; if several voices are ready, first return the choices and ask for voice_version_id.`,
     inputSchema: {
       text: z.string().min(1).describe("The text to speak."),
       voice_version_id: z.string().uuid().optional().describe("A specific voice id from voice_list_voices."),
@@ -325,7 +336,8 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
 
   tools.push({
     name: "voice_list_voices",
-    description: "List available system voices and personal clones.",
+    description:
+      `Explore ${CATALOG_FLOOR}+ unique ${VOICE_FAMILY} voices and styles, including natural speakers, creatures, dragons, robots, other characters, and personal voices.`,
     inputSchema: {},
     handler: async () => {
       const operations = ctx.operations();
@@ -390,7 +402,8 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
 
   tools.push({
     name: "voice_list_reference_prompts",
-    description: "List the exact reference texts that can be read aloud when cloning a voice.",
+    description:
+      `List the exact reference texts that an authorized speaker can read aloud to create a personal ${VOICE_FAMILY} voice.`,
     inputSchema: { language: z.enum(["cs", "en", "de"]).optional() },
     handler: async (args) => {
       const operations = ctx.operations();
@@ -412,7 +425,8 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
   if (local) {
     tools.push({
       name: "voice_clone_voice",
-      description: "Clone a voice from a local WAV recording and wait until it is ready or failed.",
+      description:
+        `Create a personal ${VOICE_FAMILY} voice from an authorized local WAV recording and wait until it is ready or failed.`,
       inputSchema: {
         name: z.string().min(1),
         reference_text_id: z.string().min(1),
@@ -439,7 +453,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     tools.push({
       name: "voice_clone_voice",
       description:
-        "Get the browser flow for recording and cloning a voice. This remote tool does not upload audio.",
+        `Open the ${VOICE_FAMILY} browser flow for creating a personal voice from an authorized recording. This remote tool does not upload audio.`,
       inputSchema: {},
       handler: async () =>
         result(
@@ -454,7 +468,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     tools.push({
       name: "voice_record_and_clone",
       description:
-        "Record from the local microphone and clone a voice after the reference text has been confirmed.",
+        `Record an authorized speaker from the local microphone and create a personal ${VOICE_FAMILY} voice after the reference text is confirmed.`,
       inputSchema: {
         name: z.string().min(1),
         reference_text_id: z.string().optional(),
