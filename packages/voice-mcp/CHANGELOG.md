@@ -1,5 +1,13 @@
 # mendelio-voice-mcp
 
+## 0.1.3
+
+### Patch Changes
+
+- fbcde76: Publish the canonical product identity through the lightweight `mendelio-voice/identity` subpath so browser and Edge consumers do not load the Node SDK client.
+- Updated dependencies [fbcde76]
+  - mendelio-voice@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
