@@ -64,7 +64,7 @@ const expectedServerSource = `${JSON.stringify(synchronizedServer, null, 2)}\n`;
 
 const synchronizedPackage = {
   ...packageJson,
-  description: identity.mcp.description,
+  description: identity.mcp.packageDescription,
   mcpName: identity.technical.registryName,
   homepage: identity.urls.developers,
 };

@@ -34,4 +34,8 @@ describe("Mendelio Voice identity", () => {
       ]),
     );
   });
+
+  it("keeps npm package metadata within the registry limit", () => {
+    expect(MENDELIO_VOICE_IDENTITY.mcp.packageDescription.length).toBeLessThanOrEqual(255);
+  });
 });
