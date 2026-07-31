@@ -71,7 +71,7 @@ export async function deviceLogin(options: DeviceLoginOptions = {}): Promise<{ k
     verificationUri: grant.verification_uri,
     verificationUriComplete: grant.verification_uri_complete,
   });
-  if (options.openBrowser !== false) openBrowser(grant.verification_uri_complete);
+  if (options.openBrowser !== false) openExternalUrl(grant.verification_uri_complete);
 
   const deadline = Date.now() + grant.expires_in * 1000;
   let intervalMs = Math.max(grant.interval, 1) * 1000;
@@ -109,7 +109,7 @@ function hostLabel(): string {
   }
 }
 
-function openBrowser(url: string): void {
+export function openExternalUrl(url: string): void {
   const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
   try {
     const child = spawn(cmd, [url], { stdio: "ignore", detached: true, shell: process.platform === "win32" });

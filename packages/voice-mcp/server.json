@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.mendelionet/mendelio-voice",
-  "title": "Hezky česky",
-  "description": "Generate playable speech with Hezky česky, powered by Mendelio Voice. Explore 190+ unique voices—including natural speakers, creatures, dragons, robots, and other characters—then play or save the result, or create a personal voice from an authorized recording.",
+  "title": "Hezky česky — Public Preview",
+  "description": "Public Preview — Generate playable speech with Hezky česky. Explore 190+ unique voices—including natural speakers, creatures, dragons, robots, and other characters—then play or save the result, or create a personal voice from an authorized recording.",
   "repository": {
     "url": "https://github.com/mendelionet/sdk",
     "source": "github"
   },
-  "version": "0.1.3",
+  "version": "0.1.4",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "mendelio-voice-mcp",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "transport": {
         "type": "stdio"
       }
@@ -23,5 +23,8 @@
       "type": "streamable-http",
       "url": "https://api.mendelio.net/mcp"
     }
-  ]
+  ],
+  "_meta": {
+    "io.mendelio/releaseStage": "public_preview"
+  }
 }

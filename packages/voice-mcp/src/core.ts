@@ -3,6 +3,7 @@ import { MENDELIO_VOICE_IDENTITY } from "mendelio-voice/identity";
 
 export {
   MENDELIO_VOICE_MCP_INSTRUCTIONS,
+  MENDELIO_VOICE_MCP_RELEASE_STAGE,
   MENDELIO_VOICE_MCP_SERVER_INFO,
 } from "./metadata.js";
 
@@ -26,15 +27,47 @@ import { VoiceApiError } from "mendelio-voice";
  * Transport-agnostic tool definitions shared by the local stdio server and the remote
  * Streamable HTTP server. A client is supplied per call so remote requests never share credentials.
  */
+export type ToolContentBlock =
+  | { type: "text"; text: string }
+  | { type: "audio"; data: string; mimeType: "audio/mpeg" };
+
 export interface ToolContent {
   [key: string]: unknown;
-  content: { type: "text"; text: string }[];
+  content: ToolContentBlock[];
   structuredContent: Record<string, unknown>;
   isError?: boolean;
 }
 
+export type ToolAccessCategory =
+  | "public_catalog"
+  | "anonymous_demo"
+  | "account_read"
+  | "account_cost";
+
+export interface TrySpeechParams {
+  text: string;
+  publicVoiceId?: number;
+  demoVerificationSecret?: string;
+}
+
+export type TrySpeechResult =
+  | {
+      status: "verification_required";
+      userCode: string;
+      verificationUriComplete: string;
+      demoVerificationSecret: string;
+      expiresAt: string;
+    }
+  | {
+      status: "completed";
+      audio: Uint8Array;
+      audioSeconds: number;
+      publicVoiceId: number;
+    };
+
 export interface ToolDef {
   name: string;
+  accessCategory: ToolAccessCategory;
   description: string;
   inputSchema: z.ZodRawShape;
   handler: (args: Record<string, unknown>) => Promise<ToolContent>;
@@ -70,6 +103,8 @@ export interface LocalVoiceMcpOperations extends VoiceMcpOperations {
 interface SharedToolContext<Operations extends VoiceMcpOperations> {
   /** Request-scoped operations, or null when no trusted principal is available. */
   operations: () => Operations | null;
+  /** Account-independent public demo admission and synthesis. */
+  trySpeech: (params: TrySpeechParams) => Promise<TrySpeechResult>;
 }
 
 export interface RemoteToolContext extends SharedToolContext<VoiceMcpOperations> {
@@ -269,6 +304,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
 
   tools.push({
     name: "voice_generate_speech",
+    accessCategory: "account_cost",
     description:
       `Generate playable speech from text with ${PUBLIC_NAME}, powered by ${TECHNICAL_NAME}. Use an available voice and style; if several voices are ready, first return the choices and ask for voice_version_id.`,
     inputSchema: {
@@ -335,7 +371,60 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
   });
 
   tools.push({
+    name: "voice_try_speech",
+    accessCategory: "anonymous_demo",
+    description:
+      `Try one short ${PUBLIC_NAME} speech sample without an account. Browser verification and the shared public-demo limits apply.`,
+    inputSchema: {
+      text: z.string().min(1).max(5_000).describe("The short text to speak; live public-demo policy may impose a lower limit."),
+      public_voice_id: z.number().int().positive().optional().describe("A numeric public voice id from voice_list_voices."),
+      format: z.literal("mp3").optional().describe("Anonymous demo audio is always MP3."),
+      demo_verification_secret: z.string().min(32).max(256).optional()
+        .describe("The opaque secret returned by the preceding verification_required result."),
+    },
+    handler: async (args) => {
+      try {
+        const attempt = await ctx.trySpeech({
+          text: String(args.text),
+          ...(typeof args.public_voice_id === "number" ? { publicVoiceId: args.public_voice_id } : {}),
+          ...(typeof args.demo_verification_secret === "string"
+            ? { demoVerificationSecret: args.demo_verification_secret }
+            : {}),
+        });
+        if (attempt.status === "verification_required") {
+          return result(
+            "Open the verification URL in a browser, complete the check, then call voice_try_speech again with the returned demo_verification_secret.",
+            {
+              status: attempt.status,
+              user_code: attempt.userCode,
+              verification_uri_complete: attempt.verificationUriComplete,
+              demo_verification_secret: attempt.demoVerificationSecret,
+              expires_at: attempt.expiresAt,
+            },
+          );
+        }
+        return {
+          content: [
+            { type: "text", text: `Generated ${attempt.audioSeconds}s of demo audio.` },
+            { type: "audio", data: bytesToBase64(attempt.audio), mimeType: "audio/mpeg" },
+          ],
+          structuredContent: {
+            status: attempt.status,
+            format: "mp3",
+            audio_seconds: attempt.audioSeconds,
+            public_voice_id: attempt.publicVoiceId,
+            bytes: attempt.audio.byteLength,
+          },
+        };
+      } catch (error) {
+        return apiFailure(error);
+      }
+    },
+  });
+
+  tools.push({
     name: "voice_list_voices",
+    accessCategory: "public_catalog",
     description:
       `Explore ${CATALOG_FLOOR}+ unique ${VOICE_FAMILY} voices and styles, including natural speakers, creatures, dragons, robots, other characters, and personal voices.`,
     inputSchema: {},
@@ -356,6 +445,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
 
   tools.push({
     name: "voice_get_generation",
+    accessCategory: "account_read",
     description: "Get the state, cost and output metadata of a generation.",
     inputSchema: { generation_id: z.string().uuid() },
     handler: async (args) => {
@@ -375,6 +465,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
 
   tools.push({
     name: "voice_get_balance",
+    accessCategory: "account_read",
     description: "Read the current Mendelio Voice credit balance in audio seconds.",
     inputSchema: {},
     handler: async () => {
@@ -402,6 +493,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
 
   tools.push({
     name: "voice_list_reference_prompts",
+    accessCategory: "public_catalog",
     description:
       `List the exact reference texts that an authorized speaker can read aloud to create a personal ${VOICE_FAMILY} voice.`,
     inputSchema: { language: z.enum(["cs", "en", "de"]).optional() },
@@ -425,6 +517,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
   if (local) {
     tools.push({
       name: "voice_clone_voice",
+      accessCategory: "account_cost",
       description:
         `Create a personal ${VOICE_FAMILY} voice from an authorized local WAV recording and wait until it is ready or failed.`,
       inputSchema: {
@@ -452,6 +545,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
   } else {
     tools.push({
       name: "voice_clone_voice",
+      accessCategory: "account_read",
       description:
         `Open the ${VOICE_FAMILY} browser flow for creating a personal voice from an authorized recording. This remote tool does not upload audio.`,
       inputSchema: {},
@@ -467,6 +561,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     const record = localContext.record;
     tools.push({
       name: "voice_record_and_clone",
+      accessCategory: "account_cost",
       description:
         `Record an authorized speaker from the local microphone and create a personal ${VOICE_FAMILY} voice after the reference text is confirmed.`,
       inputSchema: {
@@ -541,6 +636,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     const loginDevice = localContext.login;
     tools.push({
       name: "voice_login",
+      accessCategory: "account_read",
       description: "Begin Mendelio Voice device login and return the one-click approval URL.",
       inputSchema: {},
       handler: async () => {
@@ -562,4 +658,11 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
   }
 
   return tools;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") return Buffer.from(bytes).toString("base64");
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }

@@ -1,13 +1,15 @@
-# mendelio-voice-mcp
+# Hezky česky MCP
 
-MCP server for **Hezky česky** and the
-[Mendelio Voice API](https://voice.mendelio.net/developers). Generate playable speech with more
+<!-- release-stage:start -->
+> **Public Preview.** The catalogue and one short browser-verified demo work without an account. Account data and full speech generation require an API key or OAuth login; full generation uses paid audio credit.
+<!-- release-stage:end -->
+
+MCP server for **Hezky česky**. Generate playable speech with more
 than 190 unique voices—including natural speakers, creatures, dragons, robots, other characters,
 and personal voices—and create a personal voice from an authorized recording in Claude, Codex,
 Cursor, or any MCP client.
 
-The public Czech brand is **Hezky česky**. The technical platform, API, package, and server identity
-remain **Mendelio Voice**. Prompts naming either product use the same tools and release.
+The technical package and API identifiers remain under the `mendelio-voice` namespace.
 
 ## Install
 
@@ -37,7 +39,9 @@ args = ["-y", "mendelio-voice-mcp"]
 { "mendelio-voice": { "command": "npx", "args": ["-y", "mendelio-voice-mcp"] } }
 ```
 
-Then call `voice_login` once (opens a browser, one click). Or set `MENDELIO_VOICE_API_KEY`.
+Call `voice_try_speech` for a short anonymous sample; it opens a normal browser for Turnstile and
+prints the same URL for headless terminals. For account tools, call `voice_login` once or set
+`MENDELIO_VOICE_API_KEY`.
 
 ## Remote (no install)
 
@@ -45,11 +49,11 @@ In claude.ai → Connectors, add `https://api.mendelio.net/mcp`. OAuth approval 
 
 ## Tools
 
-`voice_generate_speech`, `voice_list_voices`, `voice_get_generation`, `voice_get_balance`,
+`voice_try_speech`, `voice_generate_speech`, `voice_list_voices`, `voice_get_generation`, `voice_get_balance`,
 `voice_list_reference_prompts`, `voice_clone_voice`, `voice_record_and_clone` (local mic capture via
 sox/ffmpeg), `voice_login`.
 
 For example: “Use Hezky česky MCP to generate this sentence with an interesting dragon voice and
-play it immediately.” The same request continues to work when it names Mendelio Voice MCP.
+play it immediately.”
 
 MIT. No telemetry. Your API key is never printed or logged.

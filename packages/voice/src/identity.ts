@@ -9,3 +9,7 @@ import identity from "./identity.json";
  */
 export const MENDELIO_VOICE_IDENTITY = identity;
 export type MendelioVoiceIdentity = typeof MENDELIO_VOICE_IDENTITY;
+
+export const MENDELIO_VOICE_RELEASE_STAGE_LABELS = {
+  public_preview: "Public Preview",
+} as const satisfies Record<typeof MENDELIO_VOICE_IDENTITY.mcp.releaseStage, string>;

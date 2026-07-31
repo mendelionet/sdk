@@ -149,11 +149,22 @@ function byName(tools: ToolDef[], name: string): ToolDef {
 }
 
 function buildLocalTools(
-  context: Omit<LocalToolContext, "mode" | "writeAudio"> &
-    Partial<Pick<LocalToolContext, "writeAudio">>,
+  context: Omit<LocalToolContext, "mode" | "writeAudio" | "trySpeech"> &
+    Partial<Pick<LocalToolContext, "writeAudio" | "trySpeech">>,
 ): ToolDef[] {
-  const { writeAudio = () => "/tmp/audio.mp3", ...rest } = context;
-  return buildTools({ ...rest, mode: "local", writeAudio });
+  const { writeAudio = () => "/tmp/audio.mp3", trySpeech = tryDemoSpeech, ...rest } = context;
+  return buildTools({ ...rest, mode: "local", writeAudio, trySpeech });
+}
+
+const tryDemoSpeech = async () => ({
+  status: "completed" as const,
+  audio: new Uint8Array([1, 2, 3]),
+  audioSeconds: 1,
+  publicVoiceId: 55,
+});
+
+function buildRemoteTools(operations: LocalVoiceMcpOperations | null): ToolDef[] {
+  return buildTools({ mode: "remote", operations: () => operations, trySpeech: tryDemoSpeech });
 }
 
 describe("buildTools modes", () => {
@@ -165,10 +176,11 @@ describe("buildTools modes", () => {
       record: async () => ({ ok: true, path: "/tmp/voice.wav" }),
       writeAudio: () => "/tmp/audio.mp3",
     });
-    const remote = buildTools({ mode: "remote", operations: () => operations });
+    const remote = buildRemoteTools(operations);
 
     expect(local.map((tool) => tool.name)).toEqual([
       "voice_generate_speech",
+      "voice_try_speech",
       "voice_list_voices",
       "voice_get_generation",
       "voice_get_balance",
@@ -179,6 +191,7 @@ describe("buildTools modes", () => {
     ]);
     expect(remote.map((tool) => tool.name)).toEqual([
       "voice_generate_speech",
+      "voice_try_speech",
       "voice_list_voices",
       "voice_get_generation",
       "voice_get_balance",
@@ -194,9 +207,35 @@ describe("buildTools modes", () => {
     expect(Object.keys(byName(remote, "voice_clone_voice").inputSchema)).toEqual([]);
   });
 
+  it("assigns one canonical access category to every tool", () => {
+    const { operations } = fakeOperations();
+    const tools = buildRemoteTools(operations);
+    expect(Object.fromEntries(tools.map((tool) => [tool.name, tool.accessCategory]))).toEqual({
+      voice_generate_speech: "account_cost",
+      voice_try_speech: "anonymous_demo",
+      voice_list_voices: "public_catalog",
+      voice_get_generation: "account_read",
+      voice_get_balance: "account_read",
+      voice_list_reference_prompts: "public_catalog",
+      voice_clone_voice: "account_read",
+    });
+  });
+
+  it("returns anonymous demo audio as an MCP audio block without a URL", async () => {
+    const { operations } = fakeOperations();
+    const response = await byName(
+      buildRemoteTools(operations),
+      "voice_try_speech",
+    ).handler({ text: "Ahoj", public_voice_id: 55 });
+
+    expect(response.content[1]).toEqual({ type: "audio", data: "AQID", mimeType: "audio/mpeg" });
+    expect(response.structuredContent).toMatchObject({ status: "completed", public_voice_id: 55, bytes: 3 });
+    expect(response.structuredContent).not.toHaveProperty("url");
+  });
+
   it("does not create a voice from the remote web-flow tool", async () => {
     const { operations, calls } = fakeOperations();
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_clone_voice");
+    const tool = byName(buildRemoteTools(operations), "voice_clone_voice");
     const response = await tool.handler({});
 
     expect(response.structuredContent).toMatchObject({
@@ -208,7 +247,7 @@ describe("buildTools modes", () => {
 
   it("returns mode-specific authentication recovery without invoking an SDK client", async () => {
     const local = buildLocalTools({ operations: () => null });
-    const remote = buildTools({ mode: "remote", operations: () => null });
+    const remote = buildRemoteTools(null);
 
     const localResult = await byName(local, "voice_get_balance").handler({});
     const remoteResult = await byName(remote, "voice_get_balance").handler({});
@@ -247,7 +286,7 @@ describe("tool SDK contracts", () => {
     const { operations, calls } = fakeOperations({
       voices: [catalogVoice(VOICE_ID_A, { availability: "temporarily_unavailable" })],
     });
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
+    const tool = byName(buildRemoteTools(operations), "voice_generate_speech");
     const response = await tool.handler({ text: "Ahoj" });
 
     expect(response.structuredContent).toMatchObject({
@@ -261,7 +300,7 @@ describe("tool SDK contracts", () => {
     const { operations, calls } = fakeOperations({
       voices: [catalogVoice(VOICE_ID_A), catalogVoice(VOICE_ID_B, { displayName: "Štěpán" })],
     });
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
+    const tool = byName(buildRemoteTools(operations), "voice_generate_speech");
     const response = await tool.handler({ text: "Ahoj" });
 
     expect(response.structuredContent).toMatchObject({
@@ -273,7 +312,7 @@ describe("tool SDK contracts", () => {
 
   it("passes normalized remote generation arguments and returns output metadata", async () => {
     const { operations, calls } = fakeOperations();
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
+    const tool = byName(buildRemoteTools(operations), "voice_generate_speech");
     const response = await tool.handler({ text: "Ahoj", format: "wav" });
 
     expect(calls.createGeneration).toHaveBeenCalledWith({
@@ -323,7 +362,7 @@ describe("tool SDK contracts", () => {
 
   it("maps list, get, balance and reference prompt results to structured contracts", async () => {
     const { operations, calls } = fakeOperations();
-    const tools = buildTools({ mode: "remote", operations: () => operations });
+    const tools = buildRemoteTools(operations);
 
     const voices = await byName(tools, "voice_list_voices").handler({});
     const generationResult = await byName(tools, "voice_get_generation").handler({
@@ -462,7 +501,7 @@ describe("tool SDK contracts", () => {
     const { operations } = fakeOperations({
       generation: generation({ output: null }),
     });
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_generate_speech");
+    const tool = byName(buildRemoteTools(operations), "voice_generate_speech");
     const response = await tool.handler({
       text: "Ahoj",
       voice_version_id: VOICE_ID_A,
@@ -489,7 +528,7 @@ describe("safe failures", () => {
         request_id: "req_safe",
       }),
     );
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_get_balance");
+    const tool = byName(buildRemoteTools(operations), "voice_get_balance");
     const response = await tool.handler({});
 
     expect(response.isError).toBe(true);
@@ -506,7 +545,7 @@ describe("safe failures", () => {
     const secret = "mv_live_do_not_leak";
     const { operations, calls } = fakeOperations();
     calls.getBalance.mockRejectedValue(new Error(secret));
-    const tool = byName(buildTools({ mode: "remote", operations: () => operations }), "voice_get_balance");
+    const tool = byName(buildRemoteTools(operations), "voice_get_balance");
     const response = await tool.handler({});
 
     expect(response.isError).toBe(true);

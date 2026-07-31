@@ -11,6 +11,7 @@ import {
 } from "./core.js";
 import { recordMicrophone } from "./record.js";
 import { MendelioVoiceSdkOperations } from "./sdkOperations.js";
+import { tryAnonymousSpeech } from "./anonymousDemoClient.js";
 
 /**
  * The stdio MCP server: `npx -y mendelio-voice-mcp`. Registers the local tool set (with microphone
@@ -24,6 +25,7 @@ async function main(): Promise<void> {
 
   const tools = buildTools({
     mode: "local",
+    trySpeech: tryAnonymousSpeech,
     operations: () => {
       const apiKey = process.env.MENDELIO_VOICE_API_KEY ?? readCredentials()?.api_key;
       return apiKey ? new MendelioVoiceSdkOperations(new MendelioVoice({ apiKey })) : null;

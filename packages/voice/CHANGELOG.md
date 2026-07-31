@@ -1,5 +1,11 @@
 # mendelio-voice
 
+## 0.1.4
+
+### Patch Changes
+
+- Publish the Hezky česky Public Preview access model in canonical identity metadata and expose the shared external-URL opener used by device login and anonymous terminal verification.
+
 ## 0.1.3
 
 ### Patch Changes

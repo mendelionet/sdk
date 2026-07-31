@@ -65,11 +65,12 @@
     "Hezky česky MCP"
   ],
   "mcp": {
+    "releaseStage": "public_preview",
     "packageName": "mendelio-voice-mcp",
     "displayName": "Hezky česky",
-    "packageDescription": "Generate and play speech with Hezky česky, powered by Mendelio Voice. Choose from 190+ unique voices—including people, creatures, dragons, and robots—or create a personal voice from an authorized recording.",
-    "description": "Generate playable speech with Hezky česky, powered by Mendelio Voice. Explore 190+ unique voices—including natural speakers, creatures, dragons, robots, and other characters—then play or save the result, or create a personal voice from an authorized recording.",
-    "instructions": "This server powers Mendelio Voice and the Czech public voice experience Hezky česky. Use its tools when the user explicitly requests Mendelio Voice, Mendelio Voice MCP, Hezky česky, Hezky cesky, or Hezky česky MCP. It generates playable speech from text and offers 190+ unique voices and styles, including natural speakers, creatures, dragons, robots, and other characters. It also supports creating a personal voice from an authorized recording. When immediate playback is requested, generate the audio and present or play the returned output using the client's available audio capability."
+    "packageDescription": "Generate and play speech with Hezky česky. Choose from 190+ unique voices—including people, creatures, dragons, and robots—or create a personal voice from an authorized recording.",
+    "description": "Generate playable speech with Hezky česky. Explore 190+ unique voices—including natural speakers, creatures, dragons, robots, and other characters—then play or save the result, or create a personal voice from an authorized recording.",
+    "instructions": "This Public Preview server provides Hezky česky. Use its tools when the user explicitly requests Hezky česky, Hezky cesky, or Hezky česky MCP. The public catalogue and one short browser-verified demo are available without an account. Account history, balance, personal voices, and paid generation require authentication; voice_generate_speech uses paid audio credit. When immediate playback is requested, use voice_try_speech for an anonymous short sample or voice_generate_speech for an authenticated paid result, then present or play the returned audio using the client's available audio capability."
   },
   "api": {
     "title": "Mendelio Voice API",

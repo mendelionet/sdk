@@ -38,4 +38,8 @@ describe("Mendelio Voice identity", () => {
   it("keeps npm package metadata within the registry limit", () => {
     expect(MENDELIO_VOICE_IDENTITY.mcp.packageDescription.length).toBeLessThanOrEqual(255);
   });
+
+  it("publishes the MCP lifecycle stage as structured identity data", () => {
+    expect(MENDELIO_VOICE_IDENTITY.mcp.releaseStage).toBe("public_preview");
+  });
 });

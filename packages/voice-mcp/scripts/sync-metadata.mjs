@@ -7,6 +7,7 @@ const voicePackagePath = fileURLToPath(new URL("../../voice/package.json", impor
 const identityPath = fileURLToPath(new URL("../../voice/src/identity.json", import.meta.url));
 const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
 const serverPath = fileURLToPath(new URL("../server.json", import.meta.url));
+const readmePath = fileURLToPath(new URL("../README.md", import.meta.url));
 const versionPath = fileURLToPath(new URL("../src/version.ts", import.meta.url));
 const write = process.argv.includes("--write");
 
@@ -23,6 +24,9 @@ const voicePackageJson = readJson(voicePackagePath);
 const identity = readJson(identityPath);
 const serverJson = readJson(serverPath);
 const expectedRegistryName = identity.technical.registryName;
+const releaseStageLabels = { public_preview: "Public Preview" };
+const releaseStageLabel = releaseStageLabels[identity.mcp.releaseStage];
+if (!releaseStageLabel) throw new Error(`Unsupported MCP release stage: ${identity.mcp.releaseStage}`);
 const expectedVersionSource = `// Generated from package.json by scripts/sync-metadata.mjs.\n// Do not edit this value by hand.\nexport const MENDELIO_VOICE_MCP_VERSION = ${JSON.stringify(packageJson.version)};\n`;
 
 if (packageJson.mcpName !== expectedRegistryName) {
@@ -52,8 +56,9 @@ if (!serverJson.remotes?.some(
 const synchronizedServer = {
   ...serverJson,
   name: identity.technical.registryName,
-  title: identity.mcp.displayName,
-  description: identity.mcp.description,
+  title: `${identity.mcp.displayName} — ${releaseStageLabel}`,
+  description: `${releaseStageLabel} — ${identity.mcp.description}`,
+  _meta: { ...serverJson._meta, "io.mendelio/releaseStage": identity.mcp.releaseStage },
   version: packageJson.version,
   remotes: [{ type: "streamable-http", url: identity.urls.mcp }],
   packages: serverJson.packages.map((candidate) =>
@@ -64,22 +69,33 @@ const expectedServerSource = `${JSON.stringify(synchronizedServer, null, 2)}\n`;
 
 const synchronizedPackage = {
   ...packageJson,
-  description: identity.mcp.packageDescription,
+  description: `${releaseStageLabel}: ${identity.mcp.packageDescription}`,
   mcpName: identity.technical.registryName,
   homepage: identity.urls.developers,
 };
 const expectedPackageSource = `${JSON.stringify(synchronizedPackage, null, 2)}\n`;
+const readmeSource = readFileSync(readmePath, "utf8");
+const releaseStageBlock = `<!-- release-stage:start -->\n> **${releaseStageLabel}.** The catalogue and one short browser-verified demo work without an account. Account data and full speech generation require an API key or OAuth login; full generation uses paid audio credit.\n<!-- release-stage:end -->`;
+const expectedReadmeSource = readmeSource.replace(
+  /<!-- release-stage:start -->[\s\S]*?<!-- release-stage:end -->/,
+  releaseStageBlock,
+);
+if (expectedReadmeSource === readmeSource && !readmeSource.includes("<!-- release-stage:start -->")) {
+  throw new Error("README.md is missing the generated release-stage block");
+}
 
 if (write) {
   writeFileSync(versionPath, expectedVersionSource);
   writeFileSync(serverPath, expectedServerSource);
   writeFileSync(packagePath, expectedPackageSource);
+  writeFileSync(readmePath, expectedReadmeSource);
   process.stdout.write(`Synchronized Mendelio Voice MCP metadata at ${packageJson.version}\n`);
 } else {
   const drift = [];
   if (readFileSync(versionPath, "utf8") !== expectedVersionSource) drift.push("src/version.ts");
   if (readFileSync(serverPath, "utf8") !== expectedServerSource) drift.push("server.json");
   if (JSON.stringify(packageJson) !== JSON.stringify(synchronizedPackage)) drift.push("package.json");
+  if (readmeSource !== expectedReadmeSource) drift.push("README.md");
   if (drift.length) {
     throw new Error(
       `Mendelio Voice MCP metadata drifted in ${drift.join(", ")}; run node ${packageRoot}scripts/sync-metadata.mjs --write`,

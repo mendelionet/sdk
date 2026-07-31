@@ -1,5 +1,13 @@
 # mendelio-voice-mcp
 
+## 0.1.4
+
+### Patch Changes
+
+- Mark Hezky česky MCP as a Public Preview from canonical structured identity metadata; add category-owned access control and `voice_try_speech`, whose browser-verified anonymous demo returns bounded inline MP3 without account credentials or a stored artifact.
+- Updated dependencies
+  - mendelio-voice@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes
