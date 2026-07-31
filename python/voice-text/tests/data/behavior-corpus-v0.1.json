@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "package_version": "0.1.0",
+  "cases": [
+    {
+      "id": "cs-generic-semantic",
+      "profile": "cs-generic",
+      "locale": "cs",
+      "live": false,
+      "max_chars": 300,
+      "input": "Kupodivu stálo 5 km cesty 10 Kč.",
+      "display_text": "Kupodivu stálo 5 km cesty 10 Kč.",
+      "spoken_text": "Kupodivu stálo pět kilometrů cesty deset korun.",
+      "model_text": "Kupodivu stálo pět kilometrů cesty deset korun."
+    },
+    {
+      "id": "cs-omnivoice-model-adaptation",
+      "profile": "cs-omnivoice",
+      "locale": "cs",
+      "live": false,
+      "max_chars": 300,
+      "input": "Kupodivu stálo 5 km cesty 10 Kč.",
+      "display_text": "Kupodivu stálo 5 km cesty 10 Kč.",
+      "spoken_text": "Kupodivu stálo pět kilometrů cesty deset korun.",
+      "model_text": "Kupoďivu stálo pět kilometrů cesty deset korun."
+    },
+    {
+      "id": "cs-live-model-adaptation",
+      "profile": "cs-omnivoice",
+      "locale": "cs",
+      "live": true,
+      "max_chars": 120,
+      "input": "První.",
+      "display_text": "První.",
+      "spoken_text": "První.",
+      "model_text": "Prvňí."
+    },
+    {
+      "id": "en-verbatim",
+      "profile": "verbatim",
+      "locale": "en",
+      "live": true,
+      "max_chars": 120,
+      "input": "Bring up a topic in 2026.",
+      "display_text": "Bring up a topic in 2026.",
+      "spoken_text": "Bring up a topic in 2026.",
+      "model_text": "Bring up a topic in 2026."
+    },
+    {
+      "id": "de-verbatim",
+      "profile": "verbatim",
+      "locale": "de",
+      "live": false,
+      "max_chars": 300,
+      "input": "Guten Tag, 12 km.",
+      "display_text": "Guten Tag, 12 km.",
+      "spoken_text": "Guten Tag, 12 km.",
+      "model_text": "Guten Tag, 12 km."
+    },
+    {
+      "id": "cs-negative-no-unrelated-respelling",
+      "profile": "cs-omnivoice",
+      "locale": "cs",
+      "live": false,
+      "max_chars": 300,
+      "input": "Praha je krásná.",
+      "display_text": "Praha je krásná.",
+      "spoken_text": "Praha je krásná.",
+      "model_text": "Praha je krásná."
+    }
+  ]
+}

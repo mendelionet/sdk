@@ -1,0 +1,8 @@
+Mendelio Voice Text contains a pronunciation data artifact derived from Czech
+Wiktionary/Wiktextract. Its provenance and CC BY-SA 4.0 terms are documented in
+`mendelio_voice_text/data/CZECH_PRONUNCIATION_MAP_LICENSE.md` and in the
+artifact metadata.
+
+Package code and pronunciation data are separate works with separate licence
+boundaries. Package code is distributed under Apache-2.0; the derived data
+remains under CC BY-SA 4.0.

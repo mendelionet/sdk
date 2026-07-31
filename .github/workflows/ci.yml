@@ -15,3 +15,17 @@ jobs:
       - run: pnpm -r typecheck
       - run: pnpm -r test
       - run: pnpm -r build
+  voice-text:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ matrix.python-version }} }
+      - uses: astral-sh/setup-uv@v6
+      - run: uv pip install --system -e "./python/voice-text[test]"
+      - run: python -m pytest python/voice-text/tests
+      - if: matrix.python-version == '3.13'
+        run: python python/voice-text/tools/verify_release_artifact.py

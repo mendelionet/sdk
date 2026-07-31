@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "corpus_id": "mendelio-voice-text.synthetic.v0.1",
+  "license": "CC0-1.0",
+  "sentences": [
+    "V roce 1993 měřila cesta 12 km.",
+    "Ve 20. století bylo hotovo 45 % práce.",
+    "Kupodivu stálo pět jablek 10 Kč.",
+    "Bring up a topic in a short sentence.",
+    "Guten Tag, dies ist ein synthetischer Satz."
+  ]
+}

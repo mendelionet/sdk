@@ -1,0 +1,10 @@
+# Licence map
+
+- `packages/voice` and `packages/voice-mcp`: MIT.
+- `python/voice-text` source code: Apache-2.0.
+- `python/voice-text/mendelio_voice_text/data/czech_ipa_transliteration_map.json`:
+  CC BY-SA 4.0; provenance and attribution are documented in the adjacent
+  `CZECH_PRONUNCIATION_MAP_LICENSE.md`.
+
+Mendelio and Hezky česky names and marks are not granted for use by the code
+licences. See `TRADEMARKS.md`.

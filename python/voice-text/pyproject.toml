@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mendelio-voice-text"
+version = "0.1.0"
+description = "Deterministic, language-extensible speech text preprocessing by Mendelio"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Mendelio", email = "opensource@mendelio.net" }]
+license = { file = "LICENSE" }
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+keywords = ["speech", "text-normalization", "czech", "tts", "omnivoice"]
+
+[project.urls]
+Homepage = "https://voice.mendelio.net"
+Documentation = "https://github.com/mendelionet/sdk/tree/main/python/voice-text"
+Repository = "https://github.com/mendelionet/sdk"
+Issues = "https://github.com/mendelionet/sdk/issues"
+
+[project.scripts]
+mendelio-voice-text = "mendelio_voice_text.cli:main"
+
+[project.optional-dependencies]
+test = [
+  "hypothesis>=6",
+  "pytest>=8",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mendelio_voice_text*"]
+
+[tool.setuptools.package-data]
+mendelio_voice_text = [
+  "py.typed",
+  "data/*.json",
+  "data/*.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

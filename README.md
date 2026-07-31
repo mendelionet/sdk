@@ -1,4 +1,4 @@
-# Mendelio Voice SDK
+# Mendelio Voice developer tools
 
 Official SDKs and tools for the [Mendelio Voice API](https://voice.mendelio.net/developers) —
 generate natural Czech (and multilingual) speech, clone voices from a short recording, and drive it
@@ -8,6 +8,18 @@ all from your editor over MCP.
 |---|---|
 | [`mendelio-voice`](./packages/voice) | Zero-dependency TypeScript/Node SDK + `mendelio-voice` CLI |
 | [`mendelio-voice-mcp`](./packages/voice-mcp) | MCP server — use Mendelio Voice from Claude, Codex, Cursor… |
+| [`mendelio-voice-text`](./python/voice-text) | Deterministic Python speech preprocessor with production Czech and OmniVoice support |
+
+## Local speech preprocessing (Python)
+
+```bash
+pip install mendelio-voice-text
+mendelio-voice-text normalize --profile cs-omnivoice "Ve 20. století stálo 5 km cesty 10 Kč."
+```
+
+The Python package works locally without an API key, network calls, or telemetry. It powers
+**Hezky česky** and can prepare text for a local synthesis model or for the hosted Mendelio Voice
+API.
 
 ## Quickstart (TypeScript)
 
@@ -77,4 +89,6 @@ const event = await constructEvent(rawBody, req.headers, process.env.WEBHOOK_SEC
 - API reference & OpenAPI: <https://api.mendelio.net/openapi.json>
 - Developer console (keys, interactive reference): <https://voice.mendelio.net/developers>
 
-MIT licensed. No telemetry.
+The TypeScript SDK and MCP packages are MIT licensed. `python/voice-text` code is Apache-2.0 and
+its Wiktionary-derived pronunciation artifact is CC BY-SA 4.0. See each package's licence and the
+root [`NOTICE`](./NOTICE). No package sends telemetry by default.
