@@ -1,21 +1,50 @@
 {
   "name": "mendelio-voice-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generate playable speech with Hezky česky, powered by Mendelio Voice. Explore 190+ unique voices—including natural speakers, creatures, dragons, robots, and other characters—then play or save the result, or create a personal voice from an authorized recording.",
   "mcpName": "io.github.mendelionet/mendelio-voice",
   "license": "MIT",
   "type": "module",
   "author": "Mendelio",
   "homepage": "https://voice.mendelio.net/developers",
-  "repository": { "type": "git", "url": "https://github.com/mendelionet/sdk.git", "directory": "packages/voice-mcp" },
-  "keywords": ["mcp", "model-context-protocol", "mendelio", "voice", "hezky-cesky", "czech", "czech-tts", "tts", "text-to-speech", "voice-cloning"],
-  "engines": { "node": ">=18" },
-  "bin": { "mendelio-voice-mcp": "./dist/index.js" },
-  "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./core": { "types": "./dist/core.d.ts", "import": "./dist/core.js" }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mendelionet/sdk.git",
+    "directory": "packages/voice-mcp"
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mendelio",
+    "voice",
+    "hezky-cesky",
+    "czech",
+    "czech-tts",
+    "tts",
+    "text-to-speech",
+    "voice-cloning"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "mendelio-voice-mcp": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "check:metadata": "node scripts/sync-metadata.mjs --check",
     "prebuild": "pnpm check:metadata && pnpm --filter mendelio-voice build",
@@ -30,7 +59,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "mendelio-voice": "workspace:0.1.0",
+    "mendelio-voice": "workspace:0.1.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {
