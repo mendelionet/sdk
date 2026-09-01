@@ -1,6 +1,6 @@
 {
   "name": "mendelio-voice",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Official TypeScript SDK for the Mendelio Voice API — generate natural speech, clone voices, poll async work, verify webhooks.",
   "license": "MIT",
   "type": "module",
