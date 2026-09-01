@@ -5,7 +5,7 @@ import { VoicesResource } from "./resources/voices.js";
 import { ModelsResource } from "./resources/models.js";
 import { ReferencePromptsResource } from "./resources/referencePrompts.js";
 import { BalanceResource } from "./resources/balance.js";
-import type { Format, Generation } from "./types.js";
+import type { Format, Generation, ModelSelector } from "./types.js";
 
 const VERSION = "0.1.0";
 const DEFAULT_BASE_URL = "https://api.mendelio.net/v1/audio";
@@ -158,8 +158,11 @@ export class MendelioVoice {
   async speak(params: {
     text: string;
     voiceVersionId?: string;
+    /** Exact model id or a short alias returned by `models.list()`. */
+    model?: ModelSelector | null;
     format?: Format;
   }): Promise<{ generation: Generation; audio: Uint8Array }> {
+    const model = params.model ? (await this.models.resolve(params.model)).id : undefined;
     let voiceVersionId = params.voiceVersionId;
     if (!voiceVersionId) {
       const voices: import("./types.js").CatalogVoice[] = [];
@@ -181,6 +184,7 @@ export class MendelioVoice {
     const created = await this.generations.create({
       text: params.text,
       voiceVersionId,
+      model,
       format: params.format,
     });
     const generation = await this.generations.waitFor(created.id);

@@ -43,6 +43,7 @@ export type {
   LanguageCode,
   ListResponse,
   Model,
+  ModelSelector,
   PublicVoiceState,
   ReferencePrompt,
   ReadGenerationOutput,

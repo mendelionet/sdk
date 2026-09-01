@@ -310,6 +310,9 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
     inputSchema: {
       text: z.string().min(1).describe("The text to speak."),
       voice_version_id: z.string().uuid().optional().describe("A specific voice id from voice_list_voices."),
+      model: z.string().optional().describe(
+        "Exact model id or moving alias from the Voice model catalogue, for example soniox.",
+      ),
       format: z.enum(["mp3", "wav"]).optional(),
       ...(local ? { output_path: z.string().optional().describe("Where to write the audio file.") } : {}),
     },
@@ -320,11 +323,13 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
         const resolved = await resolveGenerationVoice(operations, args.voice_version_id);
         if ("content" in resolved) return resolved;
         const format = args.format as "mp3" | "wav" | undefined;
+        const model = typeof args.model === "string" ? args.model : undefined;
 
         if (!localContext) {
           const created = await operations.createGeneration({
             text: String(args.text),
             voiceVersionId: resolved.voiceVersionId,
+            model,
             format,
           });
           const generation = await operations.waitForGeneration(created.id);
@@ -344,6 +349,7 @@ export function buildTools(ctx: ToolContext): ToolDef[] {
         const { generation, audio } = await (operations as LocalVoiceMcpOperations).synthesizeAndDownload({
           text: String(args.text),
           voiceVersionId: resolved.voiceVersionId,
+          model,
           format,
         });
         const selectedFormat = format ?? "mp3";

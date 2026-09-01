@@ -8,6 +8,8 @@
 
 export type Format = "mp3" | "wav";
 export type LanguageCode = "cs" | "en" | "de";
+/** Exact ids are returned by the model catalogue; short aliases are accepted on input. */
+export type ModelSelector = string;
 
 export type GenerationState =
   | "queued"
@@ -65,7 +67,7 @@ export interface CreateGeneration {
   object: "audio.speech_job";
   state: GenerationState;
   work_class: SpeechWorkClass;
-  model: "mendelio-voice-1";
+  model: string;
   model_version: string | null;
   cost: ReservedCost;
 }
@@ -76,7 +78,7 @@ export interface Generation {
   state: GenerationState;
   work_class: SpeechWorkClass;
   voice_version_id: string;
-  model: "mendelio-voice-1";
+  model: string;
   model_version: string | null;
   cost: CostProjection;
   output: ReadGenerationOutput;
@@ -152,7 +154,12 @@ export interface Model {
   id: string;
   object: "voice.model";
   default: boolean;
+  aliases: string[];
   languages: LanguageCode[];
+  capabilities: {
+    input_modes: ("text" | "segments")[];
+    cue_ids: string[];
+  };
   billing: { unit: "audio_second"; rate: number };
 }
 export interface ReferencePrompt {
@@ -183,7 +190,7 @@ export interface ListResponse<T> {
 export interface GenerateParams {
   text: string;
   voiceVersionId: string;
-  model?: "mendelio-voice-1" | null;
+  model?: ModelSelector | null;
   format?: Format;
   store?: boolean;
 }

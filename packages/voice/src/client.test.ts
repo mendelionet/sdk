@@ -110,6 +110,49 @@ describe("auth key resolution", () => {
 });
 
 describe("current public API routing", () => {
+  it("resolves moving model aliases from the server catalogue", async () => {
+    const models = [
+      { id: "omnivoice-0.2.0", aliases: ["omnivoice"], default: true },
+      { id: "soniox-tts-rt-v2", aliases: ["soniox"], default: false },
+    ];
+    const { fetch } = queuedFetch([
+      json(200, { object: "voice.list", data: models, has_more: false, next_cursor: null }),
+      json(200, { object: "voice.list", data: models, has_more: false, next_cursor: null }),
+    ]);
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+
+    await expect(client.models.resolve()).resolves.toMatchObject({ id: "omnivoice-0.2.0" });
+    await expect(client.models.resolve("soniox")).resolves.toMatchObject({ id: "soniox-tts-rt-v2" });
+  });
+
+  it("passes a model alias through the high-level speak helper", async () => {
+    const queued = {
+      id: "job-1", object: "audio.speech_job", state: "queued",
+      work_class: "mendelio_voice_public_batch", model: "soniox-tts-rt-v2",
+      model_version: null,
+      cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 },
+    };
+    const completed = {
+      ...queued, state: "completed", voice_version_id: "voice-1",
+      cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
+      output: { status: "available", format: "mp3", audio_seconds: 1, bytes: 1,
+        sha256: "a".repeat(64), retention_expires_at: "x", url: "https://download.example/audio",
+        url_expires_at: "y" }, created_at: "x", completed_at: "y",
+    };
+    const { fetch, calls } = queuedFetch([
+      json(200, { object: "voice.list", data: [
+        { id: "omnivoice-0.2.0", aliases: ["omnivoice"], default: true },
+        { id: "soniox-tts-rt-v2", aliases: ["soniox"], default: false },
+      ], has_more: false, next_cursor: null }),
+      json(202, queued), json(200, completed), new Response(new Uint8Array([1])),
+    ]);
+    const client = new MendelioVoice({ apiKey: KEY, fetch });
+
+    await client.speak({ text: "Ahoj", voiceVersionId: "voice-1", model: "soniox" });
+
+    expect(await calls[1]!.json()).toMatchObject({ model: "soniox-tts-rt-v2" });
+  });
+
   it("uses the production /v1/audio base for balance", async () => {
     const { fetch, calls } = queuedFetch([
       json(200, {
@@ -136,7 +179,7 @@ describe("current public API routing", () => {
       object: "audio.speech_job",
       state: "queued",
       work_class: "mendelio_voice_public_batch",
-      model: "mendelio-voice-1",
+      model: "omnivoice-0.2.0",
       model_version: null,
       cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 },
     };
@@ -223,7 +266,7 @@ describe("generations.download", () => {
         state: "completed",
         work_class: "mendelio_voice_public_batch",
         voice_version_id: "voice-1",
-        model: "mendelio-voice-1",
+        model: "omnivoice-0.2.0",
         model_version: null,
         cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
         output: {
@@ -264,7 +307,7 @@ describe("generations.download", () => {
       state: "completed",
       work_class: "mendelio_voice_public_batch",
       voice_version_id: "voice-1",
-      model: "mendelio-voice-1",
+      model: "omnivoice-0.2.0",
       model_version: null,
       cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
       output: { status: "expired", format: "mp3", retention_expires_at: "x" },
@@ -345,7 +388,7 @@ describe("voices pagination + speak", () => {
         object: "audio.speech_job",
         state: "queued",
         work_class: "mendelio_voice_public_batch",
-        model: "mendelio-voice-1",
+        model: "omnivoice-0.2.0",
         model_version: null,
         cost: { unit: "audio_second", status: "reserved", estimated: 1, reserved: 1 },
       }),
@@ -355,7 +398,7 @@ describe("voices pagination + speak", () => {
         state: "completed",
         work_class: "mendelio_voice_public_batch",
         voice_version_id: "adela",
-        model: "mendelio-voice-1",
+        model: "omnivoice-0.2.0",
         model_version: null,
         cost: { unit: "audio_second", status: "final", reserved: 1, consumed: 1, refunded: 0 },
         output: { status: "available", format: "mp3", audio_seconds: 1, bytes: 1, sha256: "a".repeat(64), retention_expires_at: "x", url: "https://dl", url_expires_at: "y" },
