@@ -1,5 +1,11 @@
 # mendelio-voice
 
+## 0.2.0
+
+### Minor Changes
+
+- 22f15c9: Add dynamic, versioned TTS model discovery and selection, including the Soniox TTS v2 model.
+
 ## 0.1.4
 
 ### Patch Changes
